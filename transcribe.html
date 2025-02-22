@@ -66,7 +66,7 @@
   <textarea id="transcription" readonly></textarea>
 
   <script>
-    const backendUrl = "https://173801d2-a106-4f61-b01b-87d88f51476a-00-2plr1pm7anr7k.worf.replit.dev";
+    const backendUrl = "https://whisper-online.fly.dev"; // ✅ Updated backend URL
     let mediaRecorder;
     let audioChunks = [];
     let sessionId = "";
@@ -155,25 +155,6 @@
         document.getElementById("startButton").disabled = false;
         document.getElementById("stopButton").disabled = true;
         document.getElementById("pauseResumeButton").disabled = true;
-      }
-    });
-
-    document.getElementById("pauseResumeButton").addEventListener("click", () => {
-      if (!mediaRecorder) return;
-      if (!isPaused) {
-        mediaRecorder.pause();
-        isPaused = true;
-        pauseStartTime = Date.now();
-        document.getElementById("pauseResumeButton").innerText = "Resume Recording";
-        clearInterval(recordingTimerInterval);
-        updateStatusMessage("Recording paused.");
-      } else {
-        mediaRecorder.resume();
-        isPaused = false;
-        pausedTimeAccumulated += Date.now() - pauseStartTime;
-        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
-        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
-        updateStatusMessage("Recording resumed.");
       }
     });
 
