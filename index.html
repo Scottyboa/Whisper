@@ -253,16 +253,6 @@
         alert("Please enter a valid API key.");
       }
     });
-
-    // Check if API key exists on page load and autofill input, but remove unwanted 's'
-    document.addEventListener("DOMContentLoaded", () => {
-      const savedApiKey = localStorage.getItem("openai_api_key");
-      if (savedApiKey === "s") {
-        localStorage.removeItem("openai_api_key");
-      } else if (savedApiKey) {
-        apiKeyInput.value = savedApiKey;
-      }
-    });
   </script>
 </body>
 </html>
