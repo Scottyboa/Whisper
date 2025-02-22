@@ -80,6 +80,7 @@
     let pauseStartTime = 0;
     let autoDeleteTimeout;
     let uploadStartTime = 0;
+    let mediaStream = null; // Store the media stream
 
     function updateStatusMessage(message, color = "#333") {
       const statusMessage = document.getElementById("statusMessage");
@@ -131,12 +132,21 @@
       } catch (error) {
         updateStatusMessage("Error uploading file: " + error, "red");
       }
+
+      stopMicrophone(); // Fully release microphone after stopping
+    }
+
+    function stopMicrophone() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop()); // Stop all audio tracks
+        mediaStream = null;
+      }
     }
 
     document.getElementById("startButton").addEventListener("click", async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(mediaStream);
         audioChunks = [];
         isPaused = false;
         pausedTimeAccumulated = 0;
