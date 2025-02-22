@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transcription Tool</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 40px;
+    }
+    button {
+      font-size: 16px;
+      padding: 10px 20px;
+      margin: 10px;
+    }
+    #recordTimer, #transcribeTimer {
+      font-size: 18px;
+      margin-top: 10px;
+    }
+    #recordIndicator {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background-color: grey;
+      display: inline-block;
+      margin-top: 10px;
+    }
+    #statusMessage {
+      font-size: 16px;
+      margin-top: 15px;
+      font-weight: bold;
+      color: #333;
+    }
+    #transcription {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 80%;
+      height: 150px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <h2>Transcription Tool</h2>
+  <div id="recordIndicator"></div>
+  <div id="recordTimer">Recording Timer: 0 s</div>
+  <div id="transcribeTimer">Transcription Timer: 0 s</div>
+  <br>
+  <button id="startButton">Start Recording</button>
+  <button id="stopButton" disabled>Stop Recording</button>
+  <button id="pauseResumeButton" disabled>Pause Recording</button>
+  <br>
+  <button id="transcribeButton">Transcribe</button>
+  <button id="deleteButton">Delete Recording</button>
+  <br>
+  <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
+  <br>
+  <h3>Transcription Result:</h3>
+  <textarea id="transcription" readonly></textarea>
+
+  <script>
+    const backendUrl = "https://173801d2-a106-4f61-b01b-87d88f51476a-00-2plr1pm7anr7k.worf.replit.dev";
+    let mediaRecorder;
+    let audioChunks = [];
+    let sessionId = "";
+    let recordingStartTime = 0;
+    let recordingTimerInterval;
+    let transcriptionTimerInterval;
+    let isPaused = false;
+    let pausedTimeAccumulated = 0;
+    let pauseStartTime = 0;
+    let autoDeleteTimeout;
+
+    function updateStatusMessage(message, color = "#333") {
+      const statusMessage = document.getElementById("statusMessage");
+      statusMessage.innerText = message;
+      statusMessage.style.color = color;
+    }
+
+    function updateRecordingTimer() {
+      let elapsed = Date.now() - recordingStartTime - pausedTimeAccumulated;
+      document.getElementById("recordTimer").innerText = "Recording Timer: " + Math.floor(elapsed / 1000) + " s";
+    }
+
+    async function handleStop() {
+      clearInterval(recordingTimerInterval);
+      updateStatusMessage("Audio is being uploaded... Please wait", "blue");
+
+      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      const formData = new FormData();
+      formData.append("file", audioBlob, "recorded.mp3");
+
+      try {
+        const response = await fetch(`${backendUrl}/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const result = await response.json();
+
+        if (result.session_id) {
+          sessionId = result.session_id;
+          document.getElementById("recordIndicator").style.backgroundColor = "green";
+          updateStatusMessage("Audio file uploaded! You can now transcribe.", "green");
+
+          clearTimeout(autoDeleteTimeout);
+          autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
+        } else {
+          updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
+        }
+      } catch (error) {
+        updateStatusMessage("Error uploading file: " + error, "red");
+      }
+    }
+
+    document.getElementById("startButton").addEventListener("click", async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        isPaused = false;
+        pausedTimeAccumulated = 0;
+        recordingStartTime = Date.now();
+        updateRecordingTimer();
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+
+        mediaRecorder.ondataavailable = event => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = handleStop;
+        mediaRecorder.start();
+
+        document.getElementById("startButton").disabled = true;
+        document.getElementById("stopButton").disabled = false;
+        document.getElementById("pauseResumeButton").disabled = false;
+        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
+        document.getElementById("recordIndicator").style.backgroundColor = "grey";
+        updateStatusMessage("Recording in progress...");
+      } catch (error) {
+        updateStatusMessage("Error accessing microphone: " + error, "red");
+      }
+    });
+
+    document.getElementById("stopButton").addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+        document.getElementById("startButton").disabled = false;
+        document.getElementById("stopButton").disabled = true;
+        document.getElementById("pauseResumeButton").disabled = true;
+      }
+    });
+
+    document.getElementById("pauseResumeButton").addEventListener("click", () => {
+      if (!mediaRecorder) return;
+      if (!isPaused) {
+        mediaRecorder.pause();
+        isPaused = true;
+        pauseStartTime = Date.now();
+        document.getElementById("pauseResumeButton").innerText = "Resume Recording";
+        clearInterval(recordingTimerInterval);
+        updateStatusMessage("Recording paused.");
+      } else {
+        mediaRecorder.resume();
+        isPaused = false;
+        pausedTimeAccumulated += Date.now() - pauseStartTime;
+        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+        updateStatusMessage("Recording resumed.");
+      }
+    });
+
+    document.getElementById("transcribeButton").addEventListener("click", async () => {
+      const apiKey = localStorage.getItem("openai_api_key");
+      if (!apiKey || !sessionId) {
+        updateStatusMessage("Missing API key or recording. Please check.", "red");
+        return;
+      }
+
+      updateStatusMessage("Transcription in progress... Please wait.", "blue");
+      const transcriptionStart = Date.now();
+      transcriptionTimerInterval = setInterval(() => {
+        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
+      }, 1000);
+
+      try {
+        const response = await fetch(`${backendUrl}/transcribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
+        });
+        const result = await response.json();
+        clearInterval(transcriptionTimerInterval);
+        updateStatusMessage("Transcription finished. You may now begin another recording.", "green");
+        document.getElementById("transcription").innerText = result.transcription || "No transcription available.";
+      } catch (error) {
+        updateStatusMessage("Error during transcription: " + error, "red");
+      }
+    });
+
+    document.getElementById("deleteButton").addEventListener("click", deleteRecording);
+  </script>
+</body>
+</html>
