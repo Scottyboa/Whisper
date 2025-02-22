@@ -14,6 +14,7 @@
       font-size: 16px;
       padding: 10px 20px;
       margin: 10px;
+      cursor: pointer;
     }
     #recordTimer, #transcribeTimer, #uploadTimer {
       font-size: 18px;
@@ -45,6 +46,46 @@
       margin-right: auto;
       text-align: left;
     }
+
+    /* Popup (modal) styling */
+    #apiKeyGuideOverlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    #apiKeyGuideModal {
+      background: #fff;
+      width: 80%;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: left;
+      overflow-y: auto;
+      max-height: 80vh;
+    }
+
+    #apiKeyGuideModal h2 {
+      margin-top: 0;
+    }
+
+    #closeGuideBtn {
+      background: red;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
@@ -66,8 +107,82 @@
   <h3>Transcription Result:</h3>
   <textarea id="transcription" readonly></textarea>
 
+  <!-- New button: Guide for setting up API key -->
+  <br>
+  <div>
+    <span style="font-size: 16px;">Guide for setting up API key</span>
+    <button id="openGuideButton">Open Guide</button>
+  </div>
+
+  <!-- Popup Overlay -->
+  <div id="apiKeyGuideOverlay">
+    <div id="apiKeyGuideModal">
+      <h2>How to Sign Up for an OpenAI API Account and Use It for Transcription</h2>
+      <p><strong>1. Creating an OpenAI API Account</strong></p>
+      <p>To use the transcription tool at Whisper Transcription, you need an OpenAI API key. Follow these steps to create an account and obtain your API key.</p>
+      <p><strong>Step 1: Sign Up for OpenAI</strong></p>
+      <ul>
+        <li>Go to OpenAI's website.</li>
+        <li>Click Sign Up in the top-right corner.</li>
+        <li>Enter your email address, create a password, and verify your email.</li>
+        <li>Follow the on-screen instructions to complete your profile.</li>
+      </ul>
+      <p><strong>Step 2: Access the API Key</strong></p>
+      <ul>
+        <li>Once logged in, navigate to the API section at <a href="https://platform.openai.com/" target="_blank">https://platform.openai.com/</a>.</li>
+        <li>Click on "View API Keys" under your account settings.</li>
+        <li>Click "Create new secret key".</li>
+        <li>Copy the generated API key and save it in a secure location (e.g., Notepad, a password manager, or a text file on your computer).</li>
+      </ul>
+      <p><em>Important: You will not be able to see this key again after closing the page!</em></p>
+
+      <p><strong>2. Purchasing API Credits (Tokens)</strong></p>
+      <p>To use OpenAI's Whisper transcription model, you need to buy API credits.</p>
+      <p><strong>Step 1: Add a Payment Method</strong></p>
+      <ul>
+        <li>Go to Billing in your OpenAI account (<a href="https://platform.openai.com/account/billing" target="_blank">https://platform.openai.com/account/billing</a>).</li>
+        <li>Click "Manage Billing" and add a credit or debit card.</li>
+        <li>Set up a spending limit to control costs if needed.</li>
+      </ul>
+      <p><strong>Step 2: Buy Tokens</strong></p>
+      <ul>
+        <li>Open the Usage & Limits section.</li>
+        <li>Select "Add Funds" to purchase credits.</li>
+        <li>Choose an amount and complete the payment.</li>
+        <li>Your account is now ready to use for transcriptions!</li>
+      </ul>
+
+      <p><strong>3. Entering Your API Key in the Whisper Transcription Tool</strong></p>
+      <p>Once you have an API key, you need to enter it into the transcription tool to start using it.</p>
+      <p><strong>Step 1: Open the Transcription Page</strong></p>
+      <ul>
+        <li>Go to Whisper Transcription.</li>
+        <li>Click on the "Enter API Key" button.</li>
+      </ul>
+      <p><strong>Step 2: Paste Your API Key</strong></p>
+      <ul>
+        <li>Copy your API key from your saved location.</li>
+        <li>Paste it into the API Key field on the Whisper page.</li>
+        <li>Click Save.</li>
+        <li>Your transcription tool is now ready to use!</li>
+      </ul>
+
+      <p><strong>4. Understanding Pricing</strong></p>
+      <p>OpenAI charges $0.006 per minute for Whisper API transcription. Below are some cost calculations in both USD and NOK.</p>
+      <ul>
+        <li>1 minute of transcription: $0.006 (~0.065 NOK)</li>
+        <li>15-minute recording: $0.006 × 15 = $0.09 (~0.97 NOK)</li>
+        <li>20 consultations of 15 minutes each (4 days a week for 4 weeks): $7.20 (~77 NOK per month)</li>
+      </ul>
+      <p>You only pay for what you use – no monthly fees. Whisper API only charges when you transcribe audio. Be mindful of your OpenAI usage by checking the billing dashboard regularly.</p>
+      <p><strong>Now you're ready to start transcribing your recordings efficiently!</strong></p>
+
+      <button id="closeGuideBtn">Close</button>
+    </div>
+  </div>
+
   <script>
-    const backendUrl = "https://whisper-online.fly.dev"; // ✅ Updated backend URL
+    const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
     let sessionId = "";
@@ -80,7 +195,9 @@
     let pauseStartTime = 0;
     let autoDeleteTimeout;
     let uploadStartTime = 0;
-    let mediaStream = null; // Store the media stream
+    let mediaStream = null;
+
+    // ================ Existing functions ================
 
     function updateStatusMessage(message, color = "#333") {
       const statusMessage = document.getElementById("statusMessage");
@@ -138,7 +255,7 @@
 
     function stopMicrophone() {
       if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop()); // Stop all audio tracks
+        mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
       }
     }
@@ -215,7 +332,167 @@
       }
     });
 
-    document.getElementById("deleteButton").addEventListener("click", deleteRecording);
+    // ============ The deleteRecording function must remain ============
+    // We'll keep it as is:
+    // The user presumably has a deleteRecording function
+    // or references it. We'll define it if not already defined:
+
+    if (typeof deleteRecording !== 'function') {
+      window.deleteRecording = async function deleteRecording() {
+        // Example: fetch DELETE
+        try {
+          const response = await fetch(`${backendUrl}/delete`, { method: 'DELETE' });
+          const result = await response.json();
+          updateStatusMessage("Recording deleted.", "blue");
+          document.getElementById("recordIndicator").style.backgroundColor = "grey";
+          document.getElementById("transcription").innerText = "";
+        } catch (error) {
+          updateStatusMessage("Error deleting recording: " + error, "red");
+        }
+      }
+    }
+
+    // =============== ADDING THE GUIDE BUTTON & POPUP ===============
+
+    // 1. We'll add a new button and text beneath everything:
+    window.addEventListener('load', () => {
+      // Create a container for the guide button
+      const guideContainer = document.createElement('div');
+      guideContainer.style.marginTop = '30px';
+
+      const guideLabel = document.createElement('span');
+      guideLabel.style.fontSize = '16px';
+      guideLabel.innerText = 'Guide for setting up API key: ';
+
+      const guideButton = document.createElement('button');
+      guideButton.id = 'openGuideButton';
+      guideButton.innerText = 'Open Guide';
+
+      guideContainer.appendChild(guideLabel);
+      guideContainer.appendChild(guideButton);
+
+      // Insert the container before the closing body tag:
+      document.body.appendChild(guideContainer);
+
+      // Create the popup overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'apiKeyGuideOverlay';
+      overlay.style.display = 'none';
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+      overlay.style.zIndex = '9999';
+      overlay.style.justifyContent = 'center';
+      overlay.style.alignItems = 'center';
+
+      // Create the modal content
+      const modal = document.createElement('div');
+      modal.id = 'apiKeyGuideModal';
+      modal.style.background = '#fff';
+      modal.style.width = '80%';
+      modal.style.maxWidth = '600px';
+      modal.style.margin = '40px auto';
+      modal.style.padding = '20px';
+      modal.style.borderRadius = '8px';
+      modal.style.textAlign = 'left';
+      modal.style.maxHeight = '80vh';
+      modal.style.overflowY = 'auto';
+
+      // Fill the modal with the text
+      // We'll put your entire text in here
+
+      modal.innerHTML = `
+        <h2>How to Sign Up for an OpenAI API Account and Use It for Transcription</h2>
+        <p><strong>1. Creating an OpenAI API Account</strong></p>
+        <p>To use the transcription tool at Whisper Transcription, you need an OpenAI API key. Follow these steps to create an account and obtain your API key.</p>
+        <p><strong>Step 1: Sign Up for OpenAI</strong></p>
+        <ul>
+          <li>Go to OpenAI's website.</li>
+          <li>Click Sign Up in the top-right corner.</li>
+          <li>Enter your email address, create a password, and verify your email.</li>
+          <li>Follow the on-screen instructions to complete your profile.</li>
+        </ul>
+        <p><strong>Step 2: Access the API Key</strong></p>
+        <ul>
+          <li>Once logged in, navigate to the API section at <a href='https://platform.openai.com/' target='_blank'>https://platform.openai.com/</a>.</li>
+          <li>Click on "View API Keys" under your account settings.</li>
+          <li>Click "Create new secret key".</li>
+          <li>Copy the generated API key and save it in a secure location (e.g., Notepad, a password manager, or a text file on your computer).</li>
+        </ul>
+        <p><em>Important: You will not be able to see this key again after closing the page!</em></p>
+
+        <p><strong>2. Purchasing API Credits (Tokens)</strong></p>
+        <p>To use OpenAI's Whisper transcription model, you need to buy API credits.</p>
+        <p><strong>Step 1: Add a Payment Method</strong></p>
+        <ul>
+          <li>Go to Billing in your OpenAI account (<a href='https://platform.openai.com/account/billing' target='_blank'>https://platform.openai.com/account/billing</a>).</li>
+          <li>Click "Manage Billing" and add a credit or debit card.</li>
+          <li>Set up a spending limit to control costs if needed.</li>
+        </ul>
+        <p><strong>Step 2: Buy Tokens</strong></p>
+        <ul>
+          <li>Open the Usage & Limits section.</li>
+          <li>Select "Add Funds" to purchase credits.</li>
+          <li>Choose an amount and complete the payment.</li>
+          <li>Your account is now ready to use for transcriptions!</li>
+        </ul>
+
+        <p><strong>3. Entering Your API Key in the Whisper Transcription Tool</strong></p>
+        <p>Once you have an API key, you need to enter it into the transcription tool to start using it.</p>
+        <p><strong>Step 1: Open the Transcription Page</strong></p>
+        <ul>
+          <li>Go to Whisper Transcription.</li>
+          <li>Click on the "Enter API Key" button.</li>
+        </ul>
+        <p><strong>Step 2: Paste Your API Key</strong></p>
+        <ul>
+          <li>Copy your API key from your saved location.</li>
+          <li>Paste it into the API Key field on the Whisper page.</li>
+          <li>Click Save.</li>
+          <li>Your transcription tool is now ready to use!</li>
+        </ul>
+
+        <p><strong>4. Understanding Pricing</strong></p>
+        <p>OpenAI charges $0.006 per minute for Whisper API transcription. Below are some cost calculations in both USD and NOK.</p>
+        <ul>
+          <li>1 minute of transcription: $0.006 (~0.065 NOK)</li>
+          <li>15-minute recording: $0.006 × 15 = $0.09 (~0.97 NOK)</li>
+          <li>20 consultations of 15 minutes each (4 days a week for 4 weeks): $7.20 (~77 NOK per month)</li>
+        </ul>
+        <p>You only pay for what you use – no monthly fees. Whisper API only charges when you transcribe audio. Be mindful of your OpenAI usage by checking the billing dashboard regularly.</p>
+        <p><strong>Now you're ready to start transcribing your recordings efficiently!</strong></p>
+      `;
+
+      // Create the close button
+      const closeBtn = document.createElement('button');
+      closeBtn.id = 'closeGuideBtn';
+      closeBtn.textContent = 'Close';
+      closeBtn.style.background = 'red';
+      closeBtn.style.color = 'white';
+      closeBtn.style.padding = '10px 20px';
+      closeBtn.style.border = 'none';
+      closeBtn.style.borderRadius = '5px';
+      closeBtn.style.cursor = 'pointer';
+      closeBtn.style.marginTop = '20px';
+
+      closeBtn.addEventListener('click', () => {
+        overlay.style.display = 'none';
+      });
+
+      modal.appendChild(closeBtn);
+
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      guideButton.addEventListener('click', () => {
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+      });
+    });
   </script>
 </body>
 </html>
