@@ -1,177 +1,76 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Transcription Recorder</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 40px;
+const backendUrl = "https://173801d2-a106-4f61-b01b-87d88f51476a-00-2plr1pm7anr7k.worf.replit.dev"; // Your actual Replit backend URL
+
+let sessionId = "";
+
+document.getElementById("recordButton").addEventListener("click", () => {
+    sessionId = "";
+    document.getElementById("transcription").innerText = "";
+});
+
+document.getElementById("uploadButton").addEventListener("click", async () => {
+    const fileInput = document.getElementById("audioFile");
+    if (fileInput.files.length === 0) {
+        alert("Please select an audio file first.");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    try {
+        const response = await fetch(`${backendUrl}/upload`, {
+            method: "POST",
+            body: formData
+        });
+
+        const result = await response.json();
+        if (result.session_id) {
+            sessionId = result.session_id;
+            alert("File uploaded successfully!");
+        } else {
+            alert("Upload error: " + (result.error || "Unknown error"));
         }
-        button {
-            font-size: 16px;
-            padding: 10px;
-            margin: 10px;
-            cursor: pointer;
+    } catch (error) {
+        alert("Error uploading file: " + error);
+    }
+});
+
+document.getElementById("transcribeButton").addEventListener("click", async () => {
+    const apiKey = localStorage.getItem("openai_api_key");
+    if (!apiKey) {
+        alert("API key is missing. Please enter your API key on the login page.");
+        return;
+    }
+    if (!sessionId) {
+        alert("No recording found. Please record and stop first.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${backendUrl}/transcribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
+        });
+
+        const result = await response.json();
+        if (result.transcription) {
+            document.getElementById("transcription").innerText = result.transcription;
+        } else {
+            alert("Transcription error: " + (result.error || "Unknown error"));
         }
-        #log {
-            margin-top: 20px;
-            white-space: pre-wrap;
-            text-align: left;
-            max-width: 600px;
-            margin: 20px auto;
-            background: #f4f4f4;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        #transcription {
-            width: 80%;
-            height: 150px;
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            font-size: 14px;
-        }
-    </style>
-</head>
-<body>
+    } catch (error) {
+        alert("Error during transcription: " + error);
+    }
+});
 
-    <h2>AI Transcription Recorder</h2>
-    <label for="apiKey">Enter OpenAI API Key:</label>
-    <input type="text" id="apiKey" placeholder="sk-..." style="width: 300px; margin-bottom: 10px;">
-    <br>
-    <button onclick="startRecording()">Start Recording</button>
-    <button onclick="stopRecording()">Stop Recording</button>
-    <button onclick="transcribeAudio()">Transcribe</button>
-    <button onclick="deleteAudio()">Delete Audio</button>
-
-    <h3>Status</h3>
-    <p id="status">Idle</p>
-
-    <h3>Log</h3>
-    <div id="log">Logs will appear here...</div>
-
-    <h3>Transcription</h3>
-    <textarea id="transcription" readonly></textarea>
-
-    <script>
-        let mediaRecorder;
-        let audioChunks = [];
-        let sessionId = null;
-        const backendURL = "https://173801d2-a106-4f61-b01b-87d88f51476a-00-2plr1pm7anr7k.worf.replit.dev";  // Your Replit backend URL
-
-        function logMessage(message) {
-            document.getElementById("log").innerText += `\n${new Date().toLocaleTimeString()} - ${message}`;
-        }
-
-        async function startRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data.size > 0) audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-                    const formData = new FormData();
-                    formData.append("file", audioBlob);
-
-                    logMessage("Uploading recording...");
-                    document.getElementById("status").innerText = "Uploading...";
-
-                    try {
-                        const response = await fetch(`${backendURL}/upload`, {
-                            method: "POST",
-                            body: formData
-                        });
-
-                        const result = await response.json();
-                        if (response.ok) {
-                            sessionId = result.session_id;
-                            logMessage("Recording uploaded successfully.");
-                        } else {
-                            logMessage("Upload failed: " + result.error);
-                        }
-                    } catch (error) {
-                        logMessage("Error uploading file: " + error);
-                    }
-
-                    document.getElementById("status").innerText = "Idle";
-                };
-
-                mediaRecorder.start();
-                document.getElementById("status").innerText = "Recording...";
-                logMessage("Recording started.");
-            } catch (error) {
-                logMessage("Error accessing microphone: " + error);
-            }
-        }
-
-        function stopRecording() {
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                mediaRecorder.stop();
-                document.getElementById("status").innerText = "Processing...";
-                logMessage("Recording stopped.");
-            }
-        }
-
-        async function transcribeAudio() {
-            const apiKey = document.getElementById("apiKey").value;
-            if (!apiKey) {
-                logMessage("Please enter your OpenAI API key.");
-                return;
-            }
-            if (!sessionId) {
-                logMessage("No recording found. Please record first.");
-                return;
-            }
-
-            logMessage("Sending to OpenAI for transcription...");
-            document.getElementById("status").innerText = "Transcribing...";
-
-            try {
-                const response = await fetch(`${backendURL}/transcribe`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
-                });
-
-                const result = await response.json();
-                if (response.ok) {
-                    document.getElementById("transcription").value = result.transcription;
-                    logMessage("Transcription successful.");
-                } else {
-                    logMessage("Transcription failed: " + result.error);
-                }
-            } catch (error) {
-                logMessage("Error transcribing: " + error);
-            }
-
-            document.getElementById("status").innerText = "Idle";
-        }
-
-        async function deleteAudio() {
-            logMessage("Deleting audio file...");
-            try {
-                const response = await fetch(`${backendURL}/delete`, { method: "DELETE" });
-                const result = await response.json();
-                if (response.ok) {
-                    logMessage(result.message);
-                    sessionId = null;
-                } else {
-                    logMessage("Error deleting file: " + result.error);
-                }
-            } catch (error) {
-                logMessage("Error: " + error);
-            }
-        }
-    </script>
-
-</body>
-</html>
+document.getElementById("deleteButton").addEventListener("click", async () => {
+    try {
+        const response = await fetch(`${backendUrl}/delete`, { method: "DELETE" });
+        const result = await response.json();
+        alert(result.message || result.error);
+        sessionId = "";
+    } catch (error) {
+        alert("Error deleting recording: " + error);
+    }
+});
