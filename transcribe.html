@@ -46,71 +46,156 @@
       margin-right: auto;
       text-align: left;
     }
-    #apiGuideButton {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-    }
-    #apiGuideModal {
+    /* Modal Styles */
+    .modal {
       display: none;
       position: fixed;
+      z-index: 1000;
       left: 0;
       top: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.6);
-      justify-content: center;
-      align-items: center;
+      background-color: rgba(0, 0, 0, 0.5);
     }
-    #apiGuideContent {
-      background: white;
+    .modal-content {
+      background-color: white;
+      margin: 10% auto;
       padding: 20px;
+      border-radius: 10px;
       width: 80%;
       max-width: 600px;
-      border-radius: 10px;
       text-align: left;
-      overflow-y: auto;
-      max-height: 80vh;
+      font-size: 16px;
+      line-height: 1.5;
     }
-    #closeModal {
-      background: red;
+    .modal-content h2 {
+      text-align: center;
+    }
+    .close-button {
+      display: block;
+      width: 100%;
+      background-color: red;
       color: white;
+      padding: 10px;
       border: none;
-      padding: 5px 10px;
-      margin-top: 10px;
+      border-radius: 5px;
       cursor: pointer;
+      text-align: center;
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
   <h2>Transcription Tool</h2>
-  <input type="text" id="apiKeyInput" placeholder="Enter your OpenAI API key" style="width: 300px; padding: 10px;">
-  <button id="apiGuideButton">Need help with API Key?</button>
+  <div id="recordIndicator"></div>
+  <div id="recordTimer">Recording Timer: 0 s</div>
+  <div id="uploadTimer">Upload Timer: 0 s</div>
+  <div id="transcribeTimer">Transcription Timer: 0 s</div>
+  <br>
+
+  <label for="apiKeyInput">Enter OpenAI API Key:</label>
+  <input type="text" id="apiKeyInput" placeholder="Paste API Key here">
+  <button id="apiKeySubmitButton">Enter</button>
+  <br>
+  <button id="helpButton">Need help with API Key?</button>
   
-  <div id="apiGuideModal">
-    <div id="apiGuideContent">
-      <h3>How to Set Up OpenAI API</h3>
-      <p>1️⃣ Go to OpenAI and sign up for an account.</p>
-      <p>2️⃣ Navigate to API Keys under your profile settings.</p>
-      <p>3️⃣ Copy your API Key and store it safely.</p>
-      <p>4️⃣ Purchase tokens from OpenAI to use the transcription tool.</p>
-      <p>💰 <b>Pricing:</b> 1 min = $0.006 (approx. NOK 0.064). A 15 min recording costs about NOK 0.96.</p>
-      <p>📊 Monthly cost for 20 daily 15-min consultations, 4 days a week = ~ NOK 307.</p>
-      <p>Compare this to Medbrics: NOK 1500 (excl. VAT) per month.</p>
-      <p>💡 Use ChatGPT+ ($20/month) to convert transcriptions into full notes.</p>
-      <p>📌 Medbrics alone: NOK 1500/month vs. API+ChatGPT: NOK 510/month.</p>
-      <button id="closeModal">Close</button>
+  <br><br>
+  <button id="startButton">Start Recording</button>
+  <button id="stopButton" disabled>Stop Recording</button>
+  <button id="pauseResumeButton" disabled>Pause Recording</button>
+  <br>
+  <button id="transcribeButton" disabled>Transcribe</button>
+  <button id="deleteButton">Delete Recording</button>
+  <br>
+  <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
+  <br>
+  <h3>Transcription Result:</h3>
+  <textarea id="transcription" readonly></textarea>
+
+  <!-- Modal for OpenAI API Guide -->
+  <div id="apiGuideModal" class="modal">
+    <div class="modal-content">
+      <h2>How to Set Up Your OpenAI API Key</h2>
+      <p><strong>1. Sign Up:</strong> Go to <a href="https://platform.openai.com/signup" target="_blank">OpenAI Signup</a> and create an account.</p>
+      <p><strong>2. Get Your API Key:</strong> Navigate to <a href="https://platform.openai.com/account/api-keys" target="_blank">API Keys</a>, generate a new key, and copy it.</p>
+      <p><strong>3. Store It Safely:</strong> Paste your API key into a secure document or password manager.</p>
+      <p><strong>4. Buy Tokens:</strong> Go to <a href="https://platform.openai.com/account/billing" target="_blank">Billing</a> to add funds for usage.</p>
+      <p><strong>5. Enter Key:</strong> Paste your API key into the input field above to use the transcription tool.</p>
+      <p><strong>Cost Example:</strong> 1 min = $0.006 (~0.06 NOK). A 15 min file = $0.09 (~0.90 NOK).</p>
+      <p><strong>Example for Heavy Use:</strong> 20 consultations of 15 min, 4 days/week for a month = <strong>$28.80 (~288 NOK).</strong></p>
+      <p><strong>Comparison:</strong> Medbrics (1500 NOK/month) vs. Whisper API (~288 NOK) + ChatGPT Plus (220 NOK) = <strong>Total 508 NOK/month</strong> saving ~1000 NOK/month.</p>
+      <button class="close-button" id="closeModal">Close</button>
     </div>
   </div>
-  
+
   <script>
-    document.getElementById("apiGuideButton").addEventListener("click", function() {
-      document.getElementById("apiGuideModal").style.display = "flex";
+    const backendUrl = "https://whisper-online.fly.dev";
+    let mediaRecorder;
+    let audioChunks = [];
+    let sessionId = "";
+    let recordingStartTime = 0;
+    let recordingTimerInterval;
+    let uploadTimerInterval;
+    let transcriptionTimerInterval;
+    let isPaused = false;
+    let pausedTimeAccumulated = 0;
+    let pauseStartTime = 0;
+    let autoDeleteTimeout;
+    let uploadStartTime = 0;
+
+    document.getElementById("helpButton").addEventListener("click", function () {
+      document.getElementById("apiGuideModal").style.display = "block";
     });
-    document.getElementById("closeModal").addEventListener("click", function() {
+
+    document.getElementById("closeModal").addEventListener("click", function () {
       document.getElementById("apiGuideModal").style.display = "none";
     });
+
+    document.getElementById("apiKeySubmitButton").addEventListener("click", function () {
+      const apiKey = document.getElementById("apiKeyInput").value;
+      if (apiKey) {
+        localStorage.setItem("openai_api_key", apiKey);
+        updateStatusMessage("API Key saved! You can now start using the transcription tool.", "green");
+      } else {
+        updateStatusMessage("Please enter a valid API key.", "red");
+      }
+    });
+
+    async function handleStop() {
+      clearInterval(recordingTimerInterval);
+      updateStatusMessage("Uploading audio... Please wait.", "blue");
+
+      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      const formData = new FormData();
+      formData.append("file", audioBlob, "recorded.mp3");
+
+      uploadStartTime = Date.now();
+      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 s";
+      uploadTimerInterval = setInterval(() => {
+        let elapsed = Date.now() - uploadStartTime;
+        document.getElementById("uploadTimer").innerText = "Upload Timer: " + Math.floor(elapsed / 1000) + " s";
+      }, 1000);
+
+      try {
+        const response = await fetch(`${backendUrl}/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const result = await response.json();
+        clearInterval(uploadTimerInterval);
+
+        if (result.session_id) {
+          sessionId = result.session_id;
+          document.getElementById("recordIndicator").style.backgroundColor = "green";
+          updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
+          document.getElementById("transcribeButton").disabled = false;
+        } else {
+          updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
+        }
+      } catch (error) {
+        updateStatusMessage("Error uploading file: " + error, "red");
+      }
+    }
   </script>
 </body>
 </html>
