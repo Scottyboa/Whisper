@@ -15,7 +15,7 @@
       padding: 10px 20px;
       margin: 10px;
     }
-    #recordTimer, #transcribeTimer {
+    #recordTimer, #transcribeTimer, #uploadTimer {
       font-size: 18px;
       margin-top: 10px;
     }
@@ -51,6 +51,7 @@
   <h2>Transcription Tool</h2>
   <div id="recordIndicator"></div>
   <div id="recordTimer">Recording Timer: 0 s</div>
+  <div id="uploadTimer">Upload Timer: 0 s</div>
   <div id="transcribeTimer">Transcription Timer: 0 s</div>
   <br>
   <button id="startButton">Start Recording</button>
@@ -72,11 +73,13 @@
     let sessionId = "";
     let recordingStartTime = 0;
     let recordingTimerInterval;
+    let uploadTimerInterval;
     let transcriptionTimerInterval;
     let isPaused = false;
     let pausedTimeAccumulated = 0;
     let pauseStartTime = 0;
     let autoDeleteTimeout;
+    let uploadStartTime = 0;
 
     function updateStatusMessage(message, color = "#333") {
       const statusMessage = document.getElementById("statusMessage");
@@ -89,6 +92,11 @@
       document.getElementById("recordTimer").innerText = "Recording Timer: " + Math.floor(elapsed / 1000) + " s";
     }
 
+    function updateUploadTimer() {
+      let elapsed = Date.now() - uploadStartTime;
+      document.getElementById("uploadTimer").innerText = "Upload Timer: " + Math.floor(elapsed / 1000) + " s";
+    }
+
     async function handleStop() {
       clearInterval(recordingTimerInterval);
       updateStatusMessage("Uploading audio... Please wait.", "blue");
@@ -97,20 +105,24 @@
       const formData = new FormData();
       formData.append("file", audioBlob, "recorded.mp3");
 
+      uploadStartTime = Date.now();
+      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 s";
+      uploadTimerInterval = setInterval(updateUploadTimer, 1000);
+
       try {
         const response = await fetch(`${backendUrl}/upload`, {
           method: "POST",
           body: formData
         });
         const result = await response.json();
+        clearInterval(uploadTimerInterval);
 
         if (result.session_id) {
           sessionId = result.session_id;
           document.getElementById("recordIndicator").style.backgroundColor = "green";
           updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
           document.getElementById("transcribeButton").disabled = false;
-          
-          // Auto-delete after 5 minutes
+
           clearTimeout(autoDeleteTimeout);
           autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
         } else {
@@ -192,18 +204,6 @@
         updateStatusMessage("Transcription error: " + error, "red");
       }
     });
-
-    async function deleteRecording() {
-      try {
-        const response = await fetch(`${backendUrl}/delete`, { method: "DELETE" });
-        const result = await response.json();
-        updateStatusMessage("Recording deleted.", "blue");
-        document.getElementById("recordIndicator").style.backgroundColor = "grey";
-        document.getElementById("transcription").innerText = "";
-      } catch (error) {
-        updateStatusMessage("Error deleting recording: " + error, "red");
-      }
-    }
 
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
   </script>
