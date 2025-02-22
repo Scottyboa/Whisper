@@ -57,7 +57,7 @@
   <button id="stopButton" disabled>Stop Recording</button>
   <button id="pauseResumeButton" disabled>Pause Recording</button>
   <br>
-  <button id="transcribeButton">Transcribe</button>
+  <button id="transcribeButton" disabled>Transcribe</button>
   <button id="deleteButton">Delete Recording</button>
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
@@ -91,7 +91,7 @@
 
     async function handleStop() {
       clearInterval(recordingTimerInterval);
-      updateStatusMessage("Audio is being uploaded... Please wait", "blue");
+      updateStatusMessage("Uploading audio... Please wait.", "blue");
 
       const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
       const formData = new FormData();
@@ -107,8 +107,10 @@
         if (result.session_id) {
           sessionId = result.session_id;
           document.getElementById("recordIndicator").style.backgroundColor = "green";
-          updateStatusMessage("Audio file uploaded! You can now transcribe.", "green");
-
+          updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
+          document.getElementById("transcribeButton").disabled = false;
+          
+          // Auto-delete after 5 minutes
           clearTimeout(autoDeleteTimeout);
           autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
         } else {
@@ -142,10 +144,10 @@
         document.getElementById("stopButton").disabled = false;
         document.getElementById("pauseResumeButton").disabled = false;
         document.getElementById("pauseResumeButton").innerText = "Pause Recording";
-        document.getElementById("recordIndicator").style.backgroundColor = "grey";
+        document.getElementById("recordIndicator").style.backgroundColor = "red";
         updateStatusMessage("Recording in progress...");
       } catch (error) {
-        updateStatusMessage("Error accessing microphone: " + error, "red");
+        updateStatusMessage("Microphone access error: " + error, "red");
       }
     });
 
@@ -161,11 +163,11 @@
     document.getElementById("transcribeButton").addEventListener("click", async () => {
       const apiKey = localStorage.getItem("openai_api_key");
       if (!apiKey || !sessionId) {
-        updateStatusMessage("Missing API key or recording. Please check.", "red");
+        updateStatusMessage("API key or recording missing.", "red");
         return;
       }
 
-      updateStatusMessage("Transcription in progress... Please wait.", "blue");
+      updateStatusMessage("Transcription in progress...", "blue");
       const transcriptionStart = Date.now();
       transcriptionTimerInterval = setInterval(() => {
         document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
@@ -179,12 +181,29 @@
         });
         const result = await response.json();
         clearInterval(transcriptionTimerInterval);
-        updateStatusMessage("Transcription finished. You may now begin another recording.", "green");
-        document.getElementById("transcription").innerText = result.transcription || "No transcription available.";
+
+        if (result.transcription) {
+          updateStatusMessage("Transcription complete!", "green");
+          document.getElementById("transcription").innerText = result.transcription;
+        } else {
+          updateStatusMessage("No transcription available.", "red");
+        }
       } catch (error) {
-        updateStatusMessage("Error during transcription: " + error, "red");
+        updateStatusMessage("Transcription error: " + error, "red");
       }
     });
+
+    async function deleteRecording() {
+      try {
+        const response = await fetch(`${backendUrl}/delete`, { method: "DELETE" });
+        const result = await response.json();
+        updateStatusMessage("Recording deleted.", "blue");
+        document.getElementById("recordIndicator").style.backgroundColor = "grey";
+        document.getElementById("transcription").innerText = "";
+      } catch (error) {
+        updateStatusMessage("Error deleting recording: " + error, "red");
+      }
+    }
 
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
   </script>
