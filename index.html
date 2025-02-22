@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcription Login</title>
+    <style>
+        body { text-align: center; font-family: Arial, sans-serif; margin-top: 50px; }
+        input, button { padding: 10px; font-size: 16px; margin: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>Enter Your OpenAI API Key</h2>
+    <input type="password" id="apiKey" placeholder="sk-..." size="50">
+    <button onclick="saveApiKey()">Enter</button>
+
+    <script>
+        function saveApiKey() {
+            let apiKey = document.getElementById("apiKey").value;
+            if (!apiKey) {
+                alert("Please enter a valid API Key.");
+                return;
+            }
+            localStorage.setItem("openai_api_key", apiKey); // Save locally
+            window.location.href = "transcribe.html"; // Redirect to transcription page
+        }
+    </script>
+
+</body>
+</html>
