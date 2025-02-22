@@ -14,6 +14,7 @@
       font-size: 16px;
       padding: 10px 20px;
       margin: 10px;
+      cursor: pointer;
     }
     #recordTimer, #transcribeTimer, #uploadTimer {
       font-size: 18px;
@@ -45,177 +46,71 @@
       margin-right: auto;
       text-align: left;
     }
+    #apiGuideButton {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    #apiGuideModal {
+      display: none;
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      justify-content: center;
+      align-items: center;
+    }
+    #apiGuideContent {
+      background: white;
+      padding: 20px;
+      width: 80%;
+      max-width: 600px;
+      border-radius: 10px;
+      text-align: left;
+      overflow-y: auto;
+      max-height: 80vh;
+    }
+    #closeModal {
+      background: red;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <h2>Transcription Tool</h2>
-  <div id="recordIndicator"></div>
-  <div id="recordTimer">Recording Timer: 0 s</div>
-  <div id="uploadTimer">Upload Timer: 0 s</div>
-  <div id="transcribeTimer">Transcription Timer: 0 s</div>
-  <br>
-  <button id="startButton">Start Recording</button>
-  <button id="stopButton" disabled>Stop Recording</button>
-  <button id="pauseResumeButton" disabled>Pause Recording</button>
-  <br>
-  <button id="transcribeButton" disabled>Transcribe</button>
-  <button id="deleteButton">Delete Recording</button>
-  <br>
-  <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
-  <br>
-  <h3>Transcription Result:</h3>
-  <textarea id="transcription" readonly></textarea>
-
+  <input type="text" id="apiKeyInput" placeholder="Enter your OpenAI API key" style="width: 300px; padding: 10px;">
+  <button id="apiGuideButton">Need help with API Key?</button>
+  
+  <div id="apiGuideModal">
+    <div id="apiGuideContent">
+      <h3>How to Set Up OpenAI API</h3>
+      <p>1️⃣ Go to OpenAI and sign up for an account.</p>
+      <p>2️⃣ Navigate to API Keys under your profile settings.</p>
+      <p>3️⃣ Copy your API Key and store it safely.</p>
+      <p>4️⃣ Purchase tokens from OpenAI to use the transcription tool.</p>
+      <p>💰 <b>Pricing:</b> 1 min = $0.006 (approx. NOK 0.064). A 15 min recording costs about NOK 0.96.</p>
+      <p>📊 Monthly cost for 20 daily 15-min consultations, 4 days a week = ~ NOK 307.</p>
+      <p>Compare this to Medbrics: NOK 1500 (excl. VAT) per month.</p>
+      <p>💡 Use ChatGPT+ ($20/month) to convert transcriptions into full notes.</p>
+      <p>📌 Medbrics alone: NOK 1500/month vs. API+ChatGPT: NOK 510/month.</p>
+      <button id="closeModal">Close</button>
+    </div>
+  </div>
+  
   <script>
-    const backendUrl = "https://whisper-online.fly.dev"; // ✅ Updated backend URL
-    let mediaRecorder;
-    let audioChunks = [];
-    let sessionId = "";
-    let recordingStartTime = 0;
-    let recordingTimerInterval;
-    let uploadTimerInterval;
-    let transcriptionTimerInterval;
-    let isPaused = false;
-    let pausedTimeAccumulated = 0;
-    let pauseStartTime = 0;
-    let autoDeleteTimeout;
-    let uploadStartTime = 0;
-    let mediaStream = null; // Store the media stream
-
-    function updateStatusMessage(message, color = "#333") {
-      const statusMessage = document.getElementById("statusMessage");
-      statusMessage.innerText = message;
-      statusMessage.style.color = color;
-    }
-
-    function updateRecordingTimer() {
-      let elapsed = Date.now() - recordingStartTime - pausedTimeAccumulated;
-      document.getElementById("recordTimer").innerText = "Recording Timer: " + Math.floor(elapsed / 1000) + " s";
-    }
-
-    function updateUploadTimer() {
-      let elapsed = Date.now() - uploadStartTime;
-      document.getElementById("uploadTimer").innerText = "Upload Timer: " + Math.floor(elapsed / 1000) + " s";
-    }
-
-    async function handleStop() {
-      clearInterval(recordingTimerInterval);
-      updateStatusMessage("Uploading audio... Please wait.", "blue");
-
-      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-      const formData = new FormData();
-      formData.append("file", audioBlob, "recorded.mp3");
-
-      uploadStartTime = Date.now();
-      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 s";
-      uploadTimerInterval = setInterval(updateUploadTimer, 1000);
-
-      try {
-        const response = await fetch(`${backendUrl}/upload`, {
-          method: "POST",
-          body: formData
-        });
-        const result = await response.json();
-        clearInterval(uploadTimerInterval);
-
-        if (result.session_id) {
-          sessionId = result.session_id;
-          document.getElementById("recordIndicator").style.backgroundColor = "green";
-          updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
-          document.getElementById("transcribeButton").disabled = false;
-
-          clearTimeout(autoDeleteTimeout);
-          autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
-        } else {
-          updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
-        }
-      } catch (error) {
-        updateStatusMessage("Error uploading file: " + error, "red");
-      }
-
-      stopMicrophone(); // Fully release microphone after stopping
-    }
-
-    function stopMicrophone() {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop()); // Stop all audio tracks
-        mediaStream = null;
-      }
-    }
-
-    document.getElementById("startButton").addEventListener("click", async () => {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(mediaStream);
-        audioChunks = [];
-        isPaused = false;
-        pausedTimeAccumulated = 0;
-        recordingStartTime = Date.now();
-        updateRecordingTimer();
-        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
-
-        mediaRecorder.ondataavailable = event => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data);
-          }
-        };
-        mediaRecorder.onstop = handleStop;
-        mediaRecorder.start();
-
-        document.getElementById("startButton").disabled = true;
-        document.getElementById("stopButton").disabled = false;
-        document.getElementById("pauseResumeButton").disabled = false;
-        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
-        document.getElementById("recordIndicator").style.backgroundColor = "red";
-        updateStatusMessage("Recording in progress...");
-      } catch (error) {
-        updateStatusMessage("Microphone access error: " + error, "red");
-      }
+    document.getElementById("apiGuideButton").addEventListener("click", function() {
+      document.getElementById("apiGuideModal").style.display = "flex";
     });
-
-    document.getElementById("stopButton").addEventListener("click", () => {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-        document.getElementById("startButton").disabled = false;
-        document.getElementById("stopButton").disabled = true;
-        document.getElementById("pauseResumeButton").disabled = true;
-      }
+    document.getElementById("closeModal").addEventListener("click", function() {
+      document.getElementById("apiGuideModal").style.display = "none";
     });
-
-    document.getElementById("transcribeButton").addEventListener("click", async () => {
-      const apiKey = localStorage.getItem("openai_api_key");
-      if (!apiKey || !sessionId) {
-        updateStatusMessage("API key or recording missing.", "red");
-        return;
-      }
-
-      updateStatusMessage("Transcription in progress...", "blue");
-      const transcriptionStart = Date.now();
-      transcriptionTimerInterval = setInterval(() => {
-        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
-      }, 1000);
-
-      try {
-        const response = await fetch(`${backendUrl}/transcribe`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
-        });
-        const result = await response.json();
-        clearInterval(transcriptionTimerInterval);
-
-        if (result.transcription) {
-          updateStatusMessage("Transcription complete!", "green");
-          document.getElementById("transcription").innerText = result.transcription;
-        } else {
-          updateStatusMessage("No transcription available.", "red");
-        }
-      } catch (error) {
-        updateStatusMessage("Transcription error: " + error, "red");
-      }
-    });
-
-    document.getElementById("deleteButton").addEventListener("click", deleteRecording);
   </script>
 </body>
 </html>
