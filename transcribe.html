@@ -82,6 +82,8 @@
   <br>
   <button id="transcribeButton" disabled>Transcribe</button>
   <button id="deleteButton">Delete Recording</button>
+  <!-- New Download Button for testing file size -->
+  <button id="downloadButton">Download Recording</button>
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
   <br>
@@ -248,14 +250,12 @@
     document.getElementById("pauseResumeButton").addEventListener("click", () => {
       if (!mediaRecorder) return;
       if (mediaRecorder.state === "recording") {
-        // Pause recording and stop the timer updates
         mediaRecorder.pause();
         pauseStartTime = Date.now();
         clearInterval(recordingTimerInterval);
         document.getElementById("pauseResumeButton").innerText = "Resume Recording";
         updateStatusMessage("Recording paused", "orange");
       } else if (mediaRecorder.state === "paused") {
-        // Resume recording, update paused time and restart timer updates
         mediaRecorder.resume();
         pausedTimeAccumulated += Date.now() - pauseStartTime;
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
@@ -316,7 +316,27 @@
     
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
     
-    // Dummy deleteRecording function – implement as needed on your backend
+    // Download Recording Functionality (Test Button)
+    document.getElementById("downloadButton").addEventListener("click", () => {
+      if (audioChunks.length === 0) {
+        alert("No recording available for download.");
+        return;
+      }
+      const blob = new Blob(audioChunks, { type: "audio/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = "recording.webm";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    });
+    
+    // Dummy deleteRecording – implement as needed on your backend
     function deleteRecording() {
       updateStatusMessage("Recording deleted.", "green");
       sessionId = "";
@@ -381,7 +401,6 @@ Bruk korrekt medisinsk terminologi og hold teksten profesjonell og presis. Skriv
         promptText = legemiddelgjennomgangPrompt;
       }
       
-      // Indicate note generation is in progress
       document.getElementById("generatedNote").value = "Generating note, please wait...";
       
       try {
