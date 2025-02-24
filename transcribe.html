@@ -72,9 +72,9 @@
 <body>
   <h2>Transcription Tool</h2>
   <div id="recordIndicator"></div>
-  <div id="recordTimer">Recording Timer: 0 s</div>
-  <div id="uploadTimer">Upload Timer: 0 s</div>
-  <div id="transcribeTimer">Transcription Timer: 0 s</div>
+  <div id="recordTimer">Recording Timer: 00 min 00 sec</div>
+  <div id="uploadTimer">Upload Timer: 00 min 00 sec</div>
+  <div id="transcribeTimer">Transcription Timer: 00 min 00 sec</div>
   <br>
   <button id="startButton">Start Recording</button>
   <button id="stopButton" disabled>Stop Recording</button>
@@ -101,6 +101,14 @@
   </div>
   
   <script>
+    // Utility function to format time in MM min SS sec
+    function formatTime(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSec / 60);
+      const seconds = totalSec % 60;
+      return (minutes < 10 ? "0" + minutes : minutes) + " min " + (seconds < 10 ? "0" + seconds : seconds) + " sec";
+    }
+    
     // Retrieve API key from sessionStorage
     const apiKey = sessionStorage.getItem("openai_api_key");
     if (!apiKey) {
@@ -108,8 +116,8 @@
       window.location.href = "index.html";
     }
     
-    // Recording & Transcription Functionality (unchanged)
-    const backendUrl = "https://whisper-online.fly.dev"; // Updated backend URL
+    // Define backend URL and variables for recording/transcription
+    const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
     let sessionId = "";
@@ -122,7 +130,7 @@
     let pauseStartTime = 0;
     let autoDeleteTimeout;
     let uploadStartTime = 0;
-    let mediaStream = null; // Store the media stream
+    let mediaStream = null;
     
     function updateStatusMessage(message, color = "#333") {
       const statusMessage = document.getElementById("statusMessage");
@@ -132,24 +140,24 @@
     
     function updateRecordingTimer() {
       let elapsed = Date.now() - recordingStartTime - pausedTimeAccumulated;
-      document.getElementById("recordTimer").innerText = "Recording Timer: " + Math.floor(elapsed / 1000) + " s";
+      document.getElementById("recordTimer").innerText = "Recording Timer: " + formatTime(elapsed);
     }
     
     function updateUploadTimer() {
       let elapsed = Date.now() - uploadStartTime;
-      document.getElementById("uploadTimer").innerText = "Upload Timer: " + Math.floor(elapsed / 1000) + " s";
+      document.getElementById("uploadTimer").innerText = "Upload Timer: " + formatTime(elapsed);
     }
     
     async function handleStop() {
       clearInterval(recordingTimerInterval);
       updateStatusMessage("Uploading audio... Please wait.", "blue");
     
-      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
       const formData = new FormData();
-      formData.append("file", audioBlob, "recorded.mp3");
+      formData.append("file", audioBlob, "recorded.webm");
     
       uploadStartTime = Date.now();
-      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 s";
+      document.getElementById("uploadTimer").innerText = "Upload Timer: " + formatTime(0);
       uploadTimerInterval = setInterval(updateUploadTimer, 1000);
     
       try {
@@ -175,7 +183,7 @@
         updateStatusMessage("Error uploading file: " + error, "red");
       }
     
-      stopMicrophone(); // Fully release microphone after stopping
+      stopMicrophone();
     }
     
     function stopMicrophone() {
@@ -185,10 +193,23 @@
       }
     }
     
+    // Updated start recording: specify audio constraints for 16kHz, mono
     document.getElementById("startButton").addEventListener("click", async () => {
       try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(mediaStream);
+        const constraints = {
+          audio: {
+            sampleRate: { ideal: 16000 },
+            channelCount: { ideal: 1 }
+          }
+        };
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // Use MediaRecorder options to record in WebM/Opus (best supported in Chrome)
+        const options = {
+          mimeType: "audio/webm; codecs=opus",
+          audioBitsPerSecond: 64000 // 64 kbps
+        };
+        mediaRecorder = new MediaRecorder(mediaStream, options);
         audioChunks = [];
         isPaused = false;
         pausedTimeAccumulated = 0;
@@ -238,7 +259,7 @@
       updateStatusMessage("Transcription in progress...", "blue");
       const transcriptionStart = Date.now();
       transcriptionTimerInterval = setInterval(() => {
-        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
+        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + formatTime(Date.now() - transcriptionStart);
       }, 1000);
     
       try {
@@ -263,7 +284,7 @@
     
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
     
-    // Dummy deleteRecording function – implement as needed on your backend
+    // Dummy deleteRecording – implement as needed on your backend
     function deleteRecording() {
       updateStatusMessage("Recording deleted.", "green");
       sessionId = "";
