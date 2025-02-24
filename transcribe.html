@@ -101,7 +101,8 @@
   </div>
   
   <script>
-    // Utility function: format time as "X sec" if less than 60 sec, otherwise "Y min Z sec"
+    // Utility function to format time:
+    // If less than 60 sec, display "X sec", otherwise "Y min Z sec"
     function formatTime(ms) {
       const totalSec = Math.floor(ms / 1000);
       if (totalSec < 60) {
@@ -120,7 +121,7 @@
       window.location.href = "index.html";
     }
     
-    // Define backend URL and variables for recording/transcription
+    // Backend URL and recording variables
     const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
@@ -182,9 +183,11 @@
           autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
         } else {
           updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
+          clearInterval(recordingTimerInterval);
         }
       } catch (error) {
         updateStatusMessage("Error uploading file: " + error, "red");
+        clearInterval(recordingTimerInterval);
       }
     
       stopMicrophone();
@@ -197,7 +200,7 @@
       }
     }
     
-    // Updated start recording: specify audio constraints for 16kHz, mono
+    // Start Recording: use default audio with constraints for 16kHz and mono
     document.getElementById("startButton").addEventListener("click", async () => {
       try {
         const constraints = {
@@ -208,10 +211,10 @@
         };
         mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         
-        // Use MediaRecorder options to record in WebM/Opus (best supported in Chrome)
+        // Use MediaRecorder options to record in WebM/Opus with 64 kbps
         const options = {
           mimeType: "audio/webm; codecs=opus",
-          audioBitsPerSecond: 64000 // 64 kbps
+          audioBitsPerSecond: 64000
         };
         mediaRecorder = new MediaRecorder(mediaStream, options);
         audioChunks = [];
@@ -237,22 +240,25 @@
         updateStatusMessage("Recording in progress...");
       } catch (error) {
         updateStatusMessage("Microphone access error: " + error, "red");
+        clearInterval(recordingTimerInterval);
       }
     });
     
-    // Re-implemented Pause/Resume Functionality
+    // Pause/Resume Functionality
     document.getElementById("pauseResumeButton").addEventListener("click", () => {
       if (!mediaRecorder) return;
       if (mediaRecorder.state === "recording") {
-        // Pause the recording
+        // Pause recording and stop the timer updates
         mediaRecorder.pause();
         pauseStartTime = Date.now();
+        clearInterval(recordingTimerInterval);
         document.getElementById("pauseResumeButton").innerText = "Resume Recording";
         updateStatusMessage("Recording paused", "orange");
       } else if (mediaRecorder.state === "paused") {
-        // Resume the recording
+        // Resume recording, update paused time and restart timer updates
         mediaRecorder.resume();
         pausedTimeAccumulated += Date.now() - pauseStartTime;
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
         document.getElementById("pauseResumeButton").innerText = "Pause Recording";
         updateStatusMessage("Recording resumed", "green");
       }
@@ -267,14 +273,17 @@
       }
     });
     
+    // Transcription Functionality
     document.getElementById("transcribeButton").addEventListener("click", async () => {
       if (!sessionId) {
         updateStatusMessage("Recording missing.", "red");
+        clearInterval(transcriptionTimerInterval);
         return;
       }
       const storedApiKey = sessionStorage.getItem("openai_api_key");
       if (!storedApiKey) {
         updateStatusMessage("API key missing.", "red");
+        clearInterval(transcriptionTimerInterval);
         return;
       }
     
@@ -301,12 +310,13 @@
         }
       } catch (error) {
         updateStatusMessage("Transcription error: " + error, "red");
+        clearInterval(transcriptionTimerInterval);
       }
     });
     
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
     
-    // Dummy deleteRecording – implement as needed on your backend
+    // Dummy deleteRecording function – implement as needed on your backend
     function deleteRecording() {
       updateStatusMessage("Recording deleted.", "green");
       sessionId = "";
