@@ -22,6 +22,7 @@
       width: 300px;
       margin: 10px;
     }
+    /* Guide Overlay Styles */
     #apiKeyGuideOverlay {
       display: none;
       position: fixed;
@@ -61,12 +62,11 @@
 </head>
 <body>
   <h2>Welcome to Whisper Transcription</h2>
-  <p>To start transcribing, you need an OpenAI API key.</p>
+  <p>To start transcribing, enter your OpenAI API key. It will only be used while this tab is open and will not be saved.</p>
 
   <!-- API Key Input -->
   <input type="text" id="apiKeyInput" placeholder="Enter API Key here">
   <br><br>
-
   <!-- Merged Button: Saves API Key & Enters Transcription Tool -->
   <button id="enterTranscriptionBtn">Enter Transcription Tool</button>
   
@@ -223,7 +223,7 @@
       <button id="closeGuideBtn">Close</button>
     </div>
   </div>
-
+  
   <script>
     const overlay = document.getElementById("apiKeyGuideOverlay");
     const closeBtn = document.getElementById("closeGuideBtn");
@@ -243,11 +243,11 @@
       overlay.style.display = "none";
     });
 
-    // Save API Key and Enter Transcription Tool
+    // Save API Key and Enter Transcription Tool (using sessionStorage for temporary storage)
     enterTranscriptionBtn.addEventListener("click", () => {
       const apiKey = apiKeyInput.value.trim();
       if (apiKey) {
-        localStorage.setItem("openai_api_key", apiKey);
+        sessionStorage.setItem("openai_api_key", apiKey);
         window.location.href = "transcribe.html";
       } else {
         alert("Please enter a valid API key.");
