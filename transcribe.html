@@ -14,7 +14,6 @@
       font-size: 16px;
       padding: 10px 20px;
       margin: 10px;
-      cursor: pointer;
     }
     #recordTimer, #transcribeTimer, #uploadTimer {
       font-size: 18px;
@@ -45,36 +44,15 @@
       margin-left: auto;
       margin-right: auto;
       text-align: left;
-      resize: none;
-    }
-    /* New Note Generation UI Styles */
-    #noteSection {
-      margin-top: 40px;
-    }
-    #generatedNote {
-      margin-top: 20px;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      width: 80%;
-      height: 150px;
-      max-width: 600px;
-      text-align: left;
-      resize: none;
-    }
-    select {
-      font-size: 16px;
-      padding: 5px;
-      margin: 10px;
     }
   </style>
 </head>
 <body>
   <h2>Transcription Tool</h2>
   <div id="recordIndicator"></div>
-  <div id="recordTimer">Recording Timer: 0 sec</div>
-  <div id="uploadTimer">Upload Timer: 0 sec</div>
-  <div id="transcribeTimer">Transcription Timer: 0 sec</div>
+  <div id="recordTimer">Recording Timer: 0 s</div>
+  <div id="uploadTimer">Upload Timer: 0 s</div>
+  <div id="transcribeTimer">Transcription Timer: 0 s</div>
   <br>
   <button id="startButton">Start Recording</button>
   <button id="stopButton" disabled>Stop Recording</button>
@@ -82,49 +60,14 @@
   <br>
   <button id="transcribeButton" disabled>Transcribe</button>
   <button id="deleteButton">Delete Recording</button>
-  <!-- New Download Button for testing file size -->
-  <button id="downloadButton">Download Recording</button>
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
   <br>
   <h3>Transcription Result:</h3>
   <textarea id="transcription" readonly></textarea>
-  
-  <!-- New Note Generation Section -->
-  <div id="noteSection">
-    <h3>Generate Note:</h3>
-    <select id="noteType">
-      <option value="medisinsk_notat">Konsultasjonsnotat</option>
-      <option value="legemiddelgjennomgang">Systematisk legemiddelgjennomgang</option>
-    </select>
-    <button id="generateNoteButton">Generate Note</button>
-    <h3>Generated Note:</h3>
-    <textarea id="generatedNote" readonly></textarea>
-  </div>
-  
+
   <script>
-    // Utility function to format time:
-    // If less than 60 sec, display "X sec", otherwise "Y min Z sec"
-    function formatTime(ms) {
-      const totalSec = Math.floor(ms / 1000);
-      if (totalSec < 60) {
-        return totalSec + " sec";
-      } else {
-        const minutes = Math.floor(totalSec / 60);
-        const seconds = totalSec % 60;
-        return minutes + " min" + (seconds > 0 ? " " + seconds + " sec" : "");
-      }
-    }
-    
-    // Retrieve API key from sessionStorage
-    const apiKey = sessionStorage.getItem("openai_api_key");
-    if (!apiKey) {
-      alert("API key is missing. Please re-enter it.");
-      window.location.href = "index.html";
-    }
-    
-    // Backend URL and recording variables
-    const backendUrl = "https://whisper-online.fly.dev";
+    const backendUrl = "https://whisper-online.fly.dev"; // ✅ Updated backend URL
     let mediaRecorder;
     let audioChunks = [];
     let sessionId = "";
@@ -137,36 +80,36 @@
     let pauseStartTime = 0;
     let autoDeleteTimeout;
     let uploadStartTime = 0;
-    let mediaStream = null;
-    
+    let mediaStream = null; // Store the media stream
+
     function updateStatusMessage(message, color = "#333") {
       const statusMessage = document.getElementById("statusMessage");
       statusMessage.innerText = message;
       statusMessage.style.color = color;
     }
-    
+
     function updateRecordingTimer() {
       let elapsed = Date.now() - recordingStartTime - pausedTimeAccumulated;
-      document.getElementById("recordTimer").innerText = "Recording Timer: " + formatTime(elapsed);
+      document.getElementById("recordTimer").innerText = "Recording Timer: " + Math.floor(elapsed / 1000) + " s";
     }
-    
+
     function updateUploadTimer() {
       let elapsed = Date.now() - uploadStartTime;
-      document.getElementById("uploadTimer").innerText = "Upload Timer: " + formatTime(elapsed);
+      document.getElementById("uploadTimer").innerText = "Upload Timer: " + Math.floor(elapsed / 1000) + " s";
     }
-    
+
     async function handleStop() {
       clearInterval(recordingTimerInterval);
       updateStatusMessage("Uploading audio... Please wait.", "blue");
-    
-      const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+
+      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
       const formData = new FormData();
-      formData.append("file", audioBlob, "recorded.webm");
-    
+      formData.append("file", audioBlob, "recorded.mp3");
+
       uploadStartTime = Date.now();
-      document.getElementById("uploadTimer").innerText = "Upload Timer: " + formatTime(0);
+      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 s";
       uploadTimerInterval = setInterval(updateUploadTimer, 1000);
-    
+
       try {
         const response = await fetch(`${backendUrl}/upload`, {
           method: "POST",
@@ -174,58 +117,43 @@
         });
         const result = await response.json();
         clearInterval(uploadTimerInterval);
-    
+
         if (result.session_id) {
           sessionId = result.session_id;
           document.getElementById("recordIndicator").style.backgroundColor = "green";
           updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
           document.getElementById("transcribeButton").disabled = false;
-    
+
           clearTimeout(autoDeleteTimeout);
           autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
         } else {
           updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
-          clearInterval(recordingTimerInterval);
         }
       } catch (error) {
         updateStatusMessage("Error uploading file: " + error, "red");
-        clearInterval(recordingTimerInterval);
       }
-    
-      stopMicrophone();
+
+      stopMicrophone(); // Fully release microphone after stopping
     }
-    
+
     function stopMicrophone() {
       if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream.getTracks().forEach(track => track.stop()); // Stop all audio tracks
         mediaStream = null;
       }
     }
-    
-    // Start Recording: use default audio with constraints for 16kHz and mono
+
     document.getElementById("startButton").addEventListener("click", async () => {
       try {
-        const constraints = {
-          audio: {
-            sampleRate: { ideal: 16000 },
-            channelCount: { ideal: 1 }
-          }
-        };
-        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        
-        // Use MediaRecorder options to record in WebM/Opus with 64 kbps
-        const options = {
-          mimeType: "audio/webm; codecs=opus",
-          audioBitsPerSecond: 64000
-        };
-        mediaRecorder = new MediaRecorder(mediaStream, options);
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(mediaStream);
         audioChunks = [];
         isPaused = false;
         pausedTimeAccumulated = 0;
         recordingStartTime = Date.now();
         updateRecordingTimer();
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
-    
+
         mediaRecorder.ondataavailable = event => {
           if (event.data.size > 0) {
             audioChunks.push(event.data);
@@ -233,7 +161,7 @@
         };
         mediaRecorder.onstop = handleStop;
         mediaRecorder.start();
-    
+
         document.getElementById("startButton").disabled = true;
         document.getElementById("stopButton").disabled = false;
         document.getElementById("pauseResumeButton").disabled = false;
@@ -242,28 +170,9 @@
         updateStatusMessage("Recording in progress...");
       } catch (error) {
         updateStatusMessage("Microphone access error: " + error, "red");
-        clearInterval(recordingTimerInterval);
       }
     });
-    
-    // Pause/Resume Functionality
-    document.getElementById("pauseResumeButton").addEventListener("click", () => {
-      if (!mediaRecorder) return;
-      if (mediaRecorder.state === "recording") {
-        mediaRecorder.pause();
-        pauseStartTime = Date.now();
-        clearInterval(recordingTimerInterval);
-        document.getElementById("pauseResumeButton").innerText = "Resume Recording";
-        updateStatusMessage("Recording paused", "orange");
-      } else if (mediaRecorder.state === "paused") {
-        mediaRecorder.resume();
-        pausedTimeAccumulated += Date.now() - pauseStartTime;
-        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
-        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
-        updateStatusMessage("Recording resumed", "green");
-      }
-    });
-    
+
     document.getElementById("stopButton").addEventListener("click", () => {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
@@ -272,36 +181,29 @@
         document.getElementById("pauseResumeButton").disabled = true;
       }
     });
-    
-    // Transcription Functionality
+
     document.getElementById("transcribeButton").addEventListener("click", async () => {
-      if (!sessionId) {
-        updateStatusMessage("Recording missing.", "red");
-        clearInterval(transcriptionTimerInterval);
+      const apiKey = localStorage.getItem("openai_api_key");
+      if (!apiKey || !sessionId) {
+        updateStatusMessage("API key or recording missing.", "red");
         return;
       }
-      const storedApiKey = sessionStorage.getItem("openai_api_key");
-      if (!storedApiKey) {
-        updateStatusMessage("API key missing.", "red");
-        clearInterval(transcriptionTimerInterval);
-        return;
-      }
-    
+
       updateStatusMessage("Transcription in progress...", "blue");
       const transcriptionStart = Date.now();
       transcriptionTimerInterval = setInterval(() => {
-        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + formatTime(Date.now() - transcriptionStart);
+        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
       }, 1000);
-    
+
       try {
         const response = await fetch(`${backendUrl}/transcribe`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: storedApiKey, session_id: sessionId })
+          body: JSON.stringify({ api_key: apiKey, session_id: sessionId })
         });
         const result = await response.json();
         clearInterval(transcriptionTimerInterval);
-    
+
         if (result.transcription) {
           updateStatusMessage("Transcription complete!", "green");
           document.getElementById("transcription").innerText = result.transcription;
@@ -310,125 +212,10 @@
         }
       } catch (error) {
         updateStatusMessage("Transcription error: " + error, "red");
-        clearInterval(transcriptionTimerInterval);
       }
     });
-    
+
     document.getElementById("deleteButton").addEventListener("click", deleteRecording);
-    
-    // Download Recording Functionality (Test Button)
-    document.getElementById("downloadButton").addEventListener("click", () => {
-      if (audioChunks.length === 0) {
-        alert("No recording available for download.");
-        return;
-      }
-      const blob = new Blob(audioChunks, { type: "audio/webm" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = url;
-      a.download = "recording.webm";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-    });
-    
-    // Dummy deleteRecording – implement as needed on your backend
-    function deleteRecording() {
-      updateStatusMessage("Recording deleted.", "green");
-      sessionId = "";
-    }
-    
-    // --- Note Generation Functionality ---
-    const medisinskNotatPrompt = `Prompt for ny chatlog:
-
-Denne chatloggen brukes til å skrive og strukturere profesjonelle konsultasjonsnotater, epikriser og henvisninger basert på opplysninger fra pasientsamtaler og kliniske vurderinger. Notatene skal være detaljerte, presise og faglig korrekte, med en struktur som gjør dem egnet for direkte innliming i pasientjournalen.
-
-Struktur for konsultasjonsnotater:
-Bakgrunn (kun hvis relevant)
-Aktuelt/anamnese
-Undersøkelse
-Vurdering
-Plan
-
-Krav til språk og stil:
-Formuleres i profesjonell, medisinsk stil med tydelig struktur.
-Skal ikke inneholde spesialtegn som ✔, 📌, ✅, emojis eller lignende.
-Unngå repetisjon av standardfraser for å variere formuleringer.
-
-Andre viktige føringer:
-Når det er taleopptak eller transkribert dialog, skal teksten omformes til et strukturert, medisinsk notat der talerne identifiseres korrekt.
-Notatene skal være utfyllende for å reflektere grundige konsultasjoner, inkludert detaljer om pasientkommunikasjon.
-Scott ønsker at notatene ikke inneholder unødvendige forklaringer eller generelle råd på slutten, men skal være presise og målrettede.
-Henvisninger skal være korte, presise og tydelig oppsummere indikasjon og problemstilling.
-Hvis jeg på slutten av diktatet forteller at du skal skrive et "langt og fint notat", betyr det at jeg vil at du skal lage notatet noe lengre med mer utfyllende tekst for å kunne fylle krav for å bruke "tidstakst". Hvis jeg bare sier "skriv et fint notat" på slutten, trenger du ikke gjøre dette.`;
-    
-    const legemiddelgjennomgangPrompt = `Jeg vil at du skal skrive en systematisk legemiddelgjennomgang basert på informasjonen jeg gir deg. Følgende struktur skal alltid følges:
-
-Systematisk legemiddelgjennomgang
-Indikasjon:
-List opp alle pasientens relevante diagnoser basert på informasjonen jeg gir deg.
-
-Vurdering:
-Legemiddelgjennomgangen er basert på samtale med pasienten (dersom pasienten er til stede) og gjennomgang av pasientens journal og epikriser.
-Skriv at det foreligger ingen interaksjoner eller kontraindikasjoner med mindre jeg spesifikt oppgir noe annet.
-
-Medikamentvurdering:
-Jeg kommer til å gi deg en liste over pasientens medisiner, inkludert dosering.
-Gå gjennom hver enkelt medisin og skriv kort formålet med medisinen samt om den er indisert.
-Dersom jeg ikke eksplisitt sier at en medisin mangler indikasjon, skal du anta at den er indisert og bør videreføres.
-
-Oppfølging:
-Avslutt alltid med "Oppfølging ved neste helsekontroll."
-
-Bruk korrekt medisinsk terminologi og hold teksten profesjonell og presis. Skriv i et format som kan kopieres direkte inn i pasientjournalen uten behov for videre redigering.`;
-    
-    document.getElementById("generateNoteButton").addEventListener("click", async () => {
-      const transcriptionText = document.getElementById("transcription").value.trim();
-      if (!transcriptionText) {
-        alert("No transcription text available.");
-        return;
-      }
-      
-      const noteType = document.getElementById("noteType").value;
-      let promptText = "";
-      if (noteType === "medisinsk_notat") {
-        promptText = medisinskNotatPrompt;
-      } else if (noteType === "legemiddelgjennomgang") {
-        promptText = legemiddelgjennomgangPrompt;
-      }
-      
-      document.getElementById("generatedNote").value = "Generating note, please wait...";
-      
-      try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + apiKey
-          },
-          body: JSON.stringify({
-            model: "gpt-4",
-            messages: [
-              { role: "system", content: promptText },
-              { role: "user", content: transcriptionText }
-            ],
-            temperature: 0.7
-          })
-        });
-        const result = await response.json();
-        if (result.choices && result.choices.length > 0) {
-          document.getElementById("generatedNote").value = result.choices[0].message.content.trim();
-        } else {
-          document.getElementById("generatedNote").value = "No note generated.";
-        }
-      } catch (error) {
-        document.getElementById("generatedNote").value = "Error generating note: " + error;
-      }
-    });
   </script>
 </body>
 </html>
