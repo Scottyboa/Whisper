@@ -72,9 +72,9 @@
 <body>
   <h2>Transcription Tool</h2>
   <div id="recordIndicator"></div>
-  <div id="recordTimer">Recording Timer: 00 min 00 sec</div>
-  <div id="uploadTimer">Upload Timer: 00 min 00 sec</div>
-  <div id="transcribeTimer">Transcription Timer: 00 min 00 sec</div>
+  <div id="recordTimer">Recording Timer: 0 sec</div>
+  <div id="uploadTimer">Upload Timer: 0 sec</div>
+  <div id="transcribeTimer">Transcription Timer: 0 sec</div>
   <br>
   <button id="startButton">Start Recording</button>
   <button id="stopButton" disabled>Stop Recording</button>
@@ -101,12 +101,16 @@
   </div>
   
   <script>
-    // Utility function to format time in MM min SS sec
+    // Utility function: format time as "X sec" if less than 60 sec, otherwise "Y min Z sec"
     function formatTime(ms) {
       const totalSec = Math.floor(ms / 1000);
-      const minutes = Math.floor(totalSec / 60);
-      const seconds = totalSec % 60;
-      return (minutes < 10 ? "0" + minutes : minutes) + " min " + (seconds < 10 ? "0" + seconds : seconds) + " sec";
+      if (totalSec < 60) {
+        return totalSec + " sec";
+      } else {
+        const minutes = Math.floor(totalSec / 60);
+        const seconds = totalSec % 60;
+        return minutes + " min" + (seconds > 0 ? " " + seconds + " sec" : "");
+      }
     }
     
     // Retrieve API key from sessionStorage
@@ -233,6 +237,24 @@
         updateStatusMessage("Recording in progress...");
       } catch (error) {
         updateStatusMessage("Microphone access error: " + error, "red");
+      }
+    });
+    
+    // Re-implemented Pause/Resume Functionality
+    document.getElementById("pauseResumeButton").addEventListener("click", () => {
+      if (!mediaRecorder) return;
+      if (mediaRecorder.state === "recording") {
+        // Pause the recording
+        mediaRecorder.pause();
+        pauseStartTime = Date.now();
+        document.getElementById("pauseResumeButton").innerText = "Resume Recording";
+        updateStatusMessage("Recording paused", "orange");
+      } else if (mediaRecorder.state === "paused") {
+        // Resume the recording
+        mediaRecorder.resume();
+        pausedTimeAccumulated += Date.now() - pauseStartTime;
+        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
+        updateStatusMessage("Recording resumed", "green");
       }
     });
     
