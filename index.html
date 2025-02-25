@@ -62,8 +62,8 @@
 <body>
   <h2>Welcome to Whisper Transcription</h2>
   <p>To start transcribing, you need an OpenAI API key.</p>
-  <!-- API Key Input -->
-  <input type="text" id="apiKeyInput" placeholder="Enter API Key here">
+  <!-- API Key Input with autocomplete off -->
+  <input type="text" id="apiKeyInput" placeholder="Enter API Key here" autocomplete="off">
   <br><br>
   <!-- Button to Save API Key & Enter Transcription Tool -->
   <button id="enterTranscriptionBtn">Enter Transcription Tool</button>
@@ -190,8 +190,16 @@
         <li>✅ ChatGPT+ ($20/month): No conversation limits, making it ideal for daily medical documentation.</li>
       </ul>
       
+      <p><strong>7. Note Generator Costs</strong></p>
       <p>
-        <strong>Final Cost Breakdown (Updated)</strong><br>
+        When using the note generator function, the cost is calculated based on the total tokens processed (both from your prompt and the generated note). Roughly, 1 token is about 4 characters or ~0.75 words. For example, if your custom prompt and output total 500 tokens, you'll be billed for those 500 tokens.
+      </p>
+      <p>
+        <strong>Tip:</strong> If you already have a ChatGPT+ subscription or prefer to generate notes directly in ChatGPT (even the free version), you might choose to do so manually—this can save you API costs. However, using the note generator here can save you time by automating the process.
+      </p>
+      
+      <p><strong>Final Cost Breakdown (Updated)</strong></p>
+      <p>
         Medbrics: 1,500 NOK (excl. VAT)<br>
         Whisper API transcription (4,800 min): 308 NOK<br>
         Whisper + ChatGPT+: 523 NOK<br>
@@ -214,6 +222,7 @@
       <button id="closeGuideBtn">Close</button>
     </div>
   </div>
+  
   <script>
     const overlay = document.getElementById("apiKeyGuideOverlay");
     const closeBtn = document.getElementById("closeGuideBtn");
