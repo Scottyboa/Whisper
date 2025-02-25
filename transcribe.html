@@ -34,7 +34,7 @@
       font-weight: bold;
       color: #333;
     }
-    /* Make the transcription textarea editable */
+    /* Editable transcription textarea */
     #transcription {
       margin-top: 20px;
       padding: 10px;
@@ -104,6 +104,7 @@
   <div id="promptSection">
     <h3>Custom Note Prompt:</h3>
     <label for="promptSlot">Prompt Slot:</label>
+    <!-- Expanded to 10 options -->
     <select id="promptSlot">
       <option value="1">1</option>
       <option value="2">2</option>
@@ -120,7 +121,7 @@
     <textarea id="customPrompt" placeholder="Enter custom prompt here" rows="1"></textarea>
   </div>
   
-  <!-- New Note Generation Section -->
+  <!-- Note Generation Section -->
   <div id="noteSection">
     <h3>Generate Note:</h3>
     <button id="generateNoteButton">Generate Note</button>
@@ -148,13 +149,13 @@
       window.location.href = "index.html";
     }
     
-    // For enhanced security: hash the API key for use in localStorage keys.
+    // For enhanced security: hash the API key before using it in localStorage keys.
     function hashString(str) {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash |= 0; // Convert to 32bit integer
+        hash |= 0;
       }
       return hash.toString();
     }
@@ -195,10 +196,10 @@
       textarea.style.height = textarea.scrollHeight + "px";
     }
     
-    // Initially load the prompt for slot 1.
+    // Initially load prompt for slot 1.
     loadPromptForSlot(promptSlotSelect.value);
     
-    // Backend URL and recording variables (as before)
+    // Backend URL and recording variables
     const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
@@ -371,7 +372,7 @@
       }
     });
     
-    // --- Note Generation Functionality ---
+    // --- Note Generation Functionality with Streaming ---
     document.getElementById("generateNoteButton").addEventListener("click", async () => {
       const transcriptionText = document.getElementById("transcription").value.trim();
       if (!transcriptionText) {
@@ -381,8 +382,8 @@
       
       // Use the custom prompt from the textarea.
       const promptText = customPromptTextarea.value;
-      
-      document.getElementById("generatedNote").value = "Generating note, please wait...";
+      const generatedNoteField = document.getElementById("generatedNote");
+      generatedNoteField.value = ""; // Clear previous content
       
       try {
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -397,17 +398,41 @@
               { role: "system", content: promptText },
               { role: "user", content: transcriptionText }
             ],
-            temperature: 0.7
+            temperature: 0.7,
+            stream: true
           })
         });
-        const result = await response.json();
-        if (result.choices && result.choices.length > 0) {
-          document.getElementById("generatedNote").value = result.choices[0].message.content.trim();
-        } else {
-          document.getElementById("generatedNote").value = "No note generated.";
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let done = false;
+        
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          const chunkValue = decoder.decode(value);
+          
+          // Each chunk should be split by newlines, filter out empty lines.
+          const lines = chunkValue.split("\n").filter(line => line.trim() !== "");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const jsonStr = line.replace("data: ", "").trim();
+              if (jsonStr === "[DONE]") {
+                done = true;
+                break;
+              }
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const textChunk = parsed.choices[0].delta?.content || "";
+                generatedNoteField.value += textChunk;
+              } catch (err) {
+                console.error("Stream chunk parsing error:", err);
+              }
+            }
+          }
         }
       } catch (error) {
-        document.getElementById("generatedNote").value = "Error generating note: " + error;
+        generatedNoteField.value = "Error generating note: " + error;
       }
     });
   </script>
