@@ -47,16 +47,19 @@
       margin-right: auto;
       text-align: left;
     }
-    /* New Custom Prompt Section */
+    /* Custom Prompt Section */
     #promptSection {
       margin-top: 40px;
     }
+    /* Change input to a textarea for multi-line editing & auto-resize */
     #customPrompt {
       width: 80%;
       max-width: 600px;
       padding: 10px;
       font-size: 16px;
       margin-top: 10px;
+      resize: none;
+      overflow: hidden;
     }
     /* New Note Generation UI Styles */
     #noteSection {
@@ -91,7 +94,6 @@
   <button id="pauseResumeButton" disabled>Pause Recording</button>
   <br>
   <button id="transcribeButton" disabled>Transcribe</button>
-  <!-- (Delete button removed) -->
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
   <br>
@@ -110,7 +112,7 @@
       <option value="5">5</option>
     </select>
     <br>
-    <input type="text" id="customPrompt" placeholder="Enter custom prompt here">
+    <textarea id="customPrompt" placeholder="Enter custom prompt here" rows="1"></textarea>
   </div>
   
   <!-- New Note Generation Section -->
@@ -134,14 +136,64 @@
       }
     }
     
-    // Retrieve API key from sessionStorage (as before)
+    // Retrieve API key from sessionStorage
     const apiKey = sessionStorage.getItem("openai_api_key");
     if (!apiKey) {
       alert("API key is missing. Please re-enter it.");
       window.location.href = "index.html";
     }
     
-    // Backend URL and recording variables (same as older script)
+    // For enhanced security: hash the API key for use in localStorage keys
+    function hashString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0; // Convert to 32bit integer
+      }
+      return hash.toString();
+    }
+    const hashedApiKey = hashString(apiKey);
+    
+    // Unique key for storing a prompt for a given slot and API key.
+    function getPromptStorageKey(slot) {
+      return "customPrompt_" + hashedApiKey + "_" + slot;
+    }
+    
+    // Custom Prompt Section: load and save
+    const promptSlotSelect = document.getElementById("promptSlot");
+    const customPromptTextarea = document.getElementById("customPrompt");
+    
+    function loadPromptForSlot(slot) {
+      const key = getPromptStorageKey(slot);
+      const storedPrompt = localStorage.getItem(key);
+      customPromptTextarea.value = storedPrompt ? storedPrompt : "";
+      autoResize(customPromptTextarea);
+    }
+    
+    // Save the prompt when the text area changes.
+    customPromptTextarea.addEventListener("input", () => {
+      const currentSlot = promptSlotSelect.value;
+      const key = getPromptStorageKey(currentSlot);
+      localStorage.setItem(key, customPromptTextarea.value);
+      autoResize(customPromptTextarea);
+    });
+    
+    // When the dropdown changes, load the corresponding prompt.
+    promptSlotSelect.addEventListener("change", () => {
+      loadPromptForSlot(promptSlotSelect.value);
+    });
+    
+    // Auto-resize the textarea based on content
+    function autoResize(textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+    
+    // Initially load the prompt for slot 1.
+    loadPromptForSlot(promptSlotSelect.value);
+    
+    // Backend URL and recording variables (as before)
     const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
@@ -311,37 +363,6 @@
       }
     });
     
-    // --- Custom Prompt Functionality ---
-    // Use a unique key for storing prompts per API key and prompt slot.
-    function getPromptStorageKey(slot) {
-      return "customPrompt_" + apiKey + "_" + slot;
-    }
-    
-    // When the prompt slot changes, load its stored value.
-    const promptSlotSelect = document.getElementById("promptSlot");
-    const customPromptInput = document.getElementById("customPrompt");
-    
-    function loadPromptForSlot(slot) {
-      const key = getPromptStorageKey(slot);
-      const storedPrompt = localStorage.getItem(key);
-      customPromptInput.value = storedPrompt ? storedPrompt : "";
-    }
-    
-    // Save the prompt to localStorage when the input field changes.
-    customPromptInput.addEventListener("input", () => {
-      const currentSlot = promptSlotSelect.value;
-      const key = getPromptStorageKey(currentSlot);
-      localStorage.setItem(key, customPromptInput.value);
-    });
-    
-    // When the dropdown changes, load the corresponding prompt.
-    promptSlotSelect.addEventListener("change", () => {
-      loadPromptForSlot(promptSlotSelect.value);
-    });
-    
-    // Initially load the prompt for slot 1.
-    loadPromptForSlot(promptSlotSelect.value);
-    
     // --- Note Generation Functionality ---
     document.getElementById("generateNoteButton").addEventListener("click", async () => {
       const transcriptionText = document.getElementById("transcription").value.trim();
@@ -349,8 +370,9 @@
         alert("No transcription text available.");
         return;
       }
+      
       // Use the custom prompt from the input field.
-      const promptText = customPromptInput.value;
+      const promptText = customPromptTextarea.value;
       
       document.getElementById("generatedNote").value = "Generating note, please wait...";
       
