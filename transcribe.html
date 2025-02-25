@@ -47,9 +47,20 @@
       margin-right: auto;
       text-align: left;
     }
+    /* New Custom Prompt Section */
+    #promptSection {
+      margin-top: 40px;
+    }
+    #customPrompt {
+      width: 80%;
+      max-width: 600px;
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 10px;
+    }
     /* New Note Generation UI Styles */
     #noteSection {
-      margin-top: 40px;
+      margin-top: 20px;
     }
     #generatedNote {
       margin-top: 20px;
@@ -80,20 +91,31 @@
   <button id="pauseResumeButton" disabled>Pause Recording</button>
   <br>
   <button id="transcribeButton" disabled>Transcribe</button>
-  <!-- Removed Delete Recording Button -->
+  <!-- (Delete button removed) -->
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
   <br>
   <h3>Transcription Result:</h3>
   <textarea id="transcription"></textarea>
   
+  <!-- Custom Prompt Section -->
+  <div id="promptSection">
+    <h3>Custom Note Prompt:</h3>
+    <label for="promptSlot">Prompt Slot:</label>
+    <select id="promptSlot">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+    </select>
+    <br>
+    <input type="text" id="customPrompt" placeholder="Enter custom prompt here">
+  </div>
+  
   <!-- New Note Generation Section -->
   <div id="noteSection">
     <h3>Generate Note:</h3>
-    <select id="noteType">
-      <option value="medisinsk_notat">Konsultasjonsnotat</option>
-      <option value="legemiddelgjennomgang">Systematisk legemiddelgjennomgang</option>
-    </select>
     <button id="generateNoteButton">Generate Note</button>
     <h3>Generated Note:</h3>
     <textarea id="generatedNote" readonly></textarea>
@@ -112,14 +134,14 @@
       }
     }
     
-    // Retrieve API key from sessionStorage
+    // Retrieve API key from sessionStorage (as before)
     const apiKey = sessionStorage.getItem("openai_api_key");
     if (!apiKey) {
       alert("API key is missing. Please re-enter it.");
       window.location.href = "index.html";
     }
     
-    // Backend URL and recording variables
+    // Backend URL and recording variables (same as older script)
     const backendUrl = "https://whisper-online.fly.dev";
     let mediaRecorder;
     let audioChunks = [];
@@ -177,10 +199,9 @@
           updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
           document.getElementById("transcribeButton").disabled = false;
     
-          // Set automatic deletion timer to 15 minutes (900,000 ms)
+          // Set auto-delete timer to 15 minutes (900,000 ms)
           clearTimeout(autoDeleteTimeout);
           autoDeleteTimeout = setTimeout(() => {
-            // Auto-delete functionality (implementation on backend may vary)
             sessionId = "";
             updateStatusMessage("Recording automatically deleted.", "green");
           }, 900000);
@@ -290,64 +311,46 @@
       }
     });
     
+    // --- Custom Prompt Functionality ---
+    // Use a unique key for storing prompts per API key and prompt slot.
+    function getPromptStorageKey(slot) {
+      return "customPrompt_" + apiKey + "_" + slot;
+    }
+    
+    // When the prompt slot changes, load its stored value.
+    const promptSlotSelect = document.getElementById("promptSlot");
+    const customPromptInput = document.getElementById("customPrompt");
+    
+    function loadPromptForSlot(slot) {
+      const key = getPromptStorageKey(slot);
+      const storedPrompt = localStorage.getItem(key);
+      customPromptInput.value = storedPrompt ? storedPrompt : "";
+    }
+    
+    // Save the prompt to localStorage when the input field changes.
+    customPromptInput.addEventListener("input", () => {
+      const currentSlot = promptSlotSelect.value;
+      const key = getPromptStorageKey(currentSlot);
+      localStorage.setItem(key, customPromptInput.value);
+    });
+    
+    // When the dropdown changes, load the corresponding prompt.
+    promptSlotSelect.addEventListener("change", () => {
+      loadPromptForSlot(promptSlotSelect.value);
+    });
+    
+    // Initially load the prompt for slot 1.
+    loadPromptForSlot(promptSlotSelect.value);
+    
     // --- Note Generation Functionality ---
-    const medisinskNotatPrompt = `Prompt for ny chatlog:
-
-Denne chatloggen brukes til å skrive og strukturere profesjonelle konsultasjonsnotater, epikriser og henvisninger basert på opplysninger fra pasientsamtaler og kliniske vurderinger. Notatene skal være detaljerte, presise og faglig korrekte, med en struktur som gjør dem egnet for direkte innliming i pasientjournalen.
-
-Struktur for konsultasjonsnotater:
-Bakgrunn (kun hvis relevant)
-Aktuelt/anamnese
-Undersøkelse
-Vurdering
-Plan
-
-Krav til språk og stil:
-Formuleres i profesjonell, medisinsk stil med tydelig struktur.
-Skal ikke inneholde spesialtegn som ✔, 📌, ✅, emojis eller lignende.
-Unngå repetisjon av standardfraser for å variere formuleringer.
-
-Andre viktige føringer:
-Når det er taleopptak eller transkribert dialog, skal teksten omformes til et strukturert, medisinsk notat der talerne identifiseres korrekt.
-Notatene skal være utfyllende for å reflektere grundige konsultasjoner, inkludert detaljer om pasientkommunikasjon.
-Scott ønsker at notatene ikke inneholder unødvendige forklaringer eller generelle råd på slutten, men skal være presise og målrettede.
-Henvisninger skal være korte, presise og tydelig oppsummere indikasjon og problemstilling.
-Hvis jeg på slutten av diktatet forteller at du skal skrive et "langt og fint notat", betyr det at jeg vil at du skal lage notatet noe lengre med mer utfyllende tekst for å kunne fylle krav for å bruke "tidstakst". Hvis jeg bare sier "skriv et fint notat" på slutten, trenger du ikke gjøre dette.`;
-    
-    const legemiddelgjennomgangPrompt = `Jeg vil at du skal skrive en systematisk legemiddelgjennomgang basert på informasjonen jeg gir deg. Følgende struktur skal alltid følges:
-
-Systematisk legemiddelgjennomgang
-Indikasjon:
-List opp alle pasientens relevante diagnoser basert på informasjonen jeg gir deg.
-
-Vurdering:
-Legemiddelgjennomgangen er basert på samtale med pasienten (dersom pasienten er til stede) og gjennomgang av pasientens journal og epikriser.
-Skriv at det foreligger ingen interaksjoner eller kontraindikasjoner med mindre jeg spesifikt oppgir noe annet.
-
-Medikamentvurdering:
-Jeg kommer til å gi deg en liste over pasientens medisiner, inkludert dosering.
-Gå gjennom hver enkelt medisin og skriv kort formålet med medisinen samt om den er indisert.
-Dersom jeg ikke eksplisitt sier at en medisin mangler indikasjon, skal du anta at den er indisert og bør videreføres.
-
-Oppfølging:
-Avslutt alltid med "Oppfølging ved neste helsekontroll."
-
-Bruk korrekt medisinsk terminologi og hold teksten profesjonell og presis. Skriv i et format som kan kopieres direkte inn i pasientjournalen uten behov for videre redigering.`;
-    
     document.getElementById("generateNoteButton").addEventListener("click", async () => {
       const transcriptionText = document.getElementById("transcription").value.trim();
       if (!transcriptionText) {
         alert("No transcription text available.");
         return;
       }
-      
-      const noteType = document.getElementById("noteType").value;
-      let promptText = "";
-      if (noteType === "medisinsk_notat") {
-        promptText = medisinskNotatPrompt;
-      } else if (noteType === "legemiddelgjennomgang") {
-        promptText = legemiddelgjennomgangPrompt;
-      }
+      // Use the custom prompt from the input field.
+      const promptText = customPromptInput.value;
       
       document.getElementById("generatedNote").value = "Generating note, please wait...";
       
