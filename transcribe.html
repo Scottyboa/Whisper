@@ -51,6 +51,7 @@
     #promptSection {
       margin-top: 40px;
     }
+    /* Use a textarea for multi-line prompt editing with auto-resize */
     #customPrompt {
       width: 80%;
       max-width: 600px;
@@ -131,4 +132,279 @@
       } else {
         const minutes = Math.floor(totalSec / 60);
         const seconds = totalSec % 60;
-        return minutes + " min" + (seconds > 0 ? " "
+        return minutes + " min" + (seconds > 0 ? " " + seconds + " sec" : "");
+      }
+    }
+    
+    // Retrieve API key from sessionStorage
+    const apiKey = sessionStorage.getItem("openai_api_key");
+    if (!apiKey) {
+      alert("API key is missing. Please re-enter it.");
+      window.location.href = "index.html";
+    }
+    
+    // For enhanced security: hash the API key for use in localStorage keys.
+    function hashString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0; // Convert to 32bit integer
+      }
+      return hash.toString();
+    }
+    const hashedApiKey = hashString(apiKey);
+    
+    // Unique key for storing a prompt for a given slot and API key.
+    function getPromptStorageKey(slot) {
+      return "customPrompt_" + hashedApiKey + "_" + slot;
+    }
+    
+    // Custom Prompt Section: load and save
+    const promptSlotSelect = document.getElementById("promptSlot");
+    const customPromptTextarea = document.getElementById("customPrompt");
+    
+    function loadPromptForSlot(slot) {
+      const key = getPromptStorageKey(slot);
+      const storedPrompt = localStorage.getItem(key);
+      customPromptTextarea.value = storedPrompt ? storedPrompt : "";
+      autoResize(customPromptTextarea);
+    }
+    
+    // Save the prompt when the textarea changes.
+    customPromptTextarea.addEventListener("input", () => {
+      const currentSlot = promptSlotSelect.value;
+      const key = getPromptStorageKey(currentSlot);
+      localStorage.setItem(key, customPromptTextarea.value);
+      autoResize(customPromptTextarea);
+    });
+    
+    // When the dropdown changes, load the corresponding prompt.
+    promptSlotSelect.addEventListener("change", () => {
+      loadPromptForSlot(promptSlotSelect.value);
+    });
+    
+    // Auto-resize the textarea based on content
+    function autoResize(textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+    
+    // Initially load the prompt for slot 1.
+    loadPromptForSlot(promptSlotSelect.value);
+    
+    // Backend URL and recording variables
+    const backendUrl = "https://whisper-online.fly.dev";
+    let mediaRecorder;
+    let audioChunks = [];
+    let sessionId = "";
+    let recordingStartTime = 0;
+    let recordingTimerInterval;
+    let uploadTimerInterval;
+    let transcriptionTimerInterval;
+    let isPaused = false;
+    let pausedTimeAccumulated = 0;
+    let pauseStartTime = 0;
+    let autoDeleteTimeout;
+    let uploadStartTime = 0;
+    let mediaStream = null;
+    
+    function updateStatusMessage(message, color = "#333") {
+      const statusMessage = document.getElementById("statusMessage");
+      statusMessage.innerText = message;
+      statusMessage.style.color = color;
+    }
+    
+    function updateRecordingTimer() {
+      let elapsed = Date.now() - recordingStartTime - pausedTimeAccumulated;
+      document.getElementById("recordTimer").innerText = "Recording Timer: " + formatTime(elapsed);
+    }
+    
+    function updateUploadTimer() {
+      let elapsed = Date.now() - uploadStartTime;
+      document.getElementById("uploadTimer").innerText = "Upload Timer: " + formatTime(elapsed);
+    }
+    
+    async function handleStop() {
+      clearInterval(recordingTimerInterval);
+      updateStatusMessage("Uploading audio... Please wait.", "blue");
+    
+      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      const formData = new FormData();
+      formData.append("file", audioBlob, "recorded.mp3");
+    
+      uploadStartTime = Date.now();
+      document.getElementById("uploadTimer").innerText = "Upload Timer: 0 sec";
+      uploadTimerInterval = setInterval(updateUploadTimer, 1000);
+    
+      try {
+        const response = await fetch(`${backendUrl}/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const result = await response.json();
+        clearInterval(uploadTimerInterval);
+    
+        if (result.session_id) {
+          sessionId = result.session_id;
+          document.getElementById("recordIndicator").style.backgroundColor = "green";
+          updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
+          document.getElementById("transcribeButton").disabled = false;
+    
+          // Set auto-delete timer to 15 minutes (900,000 ms)
+          clearTimeout(autoDeleteTimeout);
+          autoDeleteTimeout = setTimeout(() => {
+            sessionId = "";
+            updateStatusMessage("Recording automatically deleted.", "green");
+          }, 900000);
+        } else {
+          updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
+        }
+      } catch (error) {
+        updateStatusMessage("Error uploading file: " + error, "red");
+      }
+    
+      stopMicrophone();
+    }
+    
+    function stopMicrophone() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+    }
+    
+    document.getElementById("startButton").addEventListener("click", async () => {
+      // Clear any existing auto-delete timer so new recording overwrites previous session.
+      clearTimeout(autoDeleteTimeout);
+      
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(mediaStream);
+        audioChunks = [];
+        isPaused = false;
+        pausedTimeAccumulated = 0;
+        recordingStartTime = Date.now();
+        updateRecordingTimer();
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+    
+        mediaRecorder.ondataavailable = event => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = handleStop;
+        mediaRecorder.start();
+    
+        document.getElementById("startButton").disabled = true;
+        document.getElementById("stopButton").disabled = false;
+        document.getElementById("pauseResumeButton").disabled = false;
+        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
+        document.getElementById("recordIndicator").style.backgroundColor = "red";
+        updateStatusMessage("Recording in progress...");
+      } catch (error) {
+        updateStatusMessage("Microphone access error: " + error, "red");
+      }
+    });
+    
+    document.getElementById("stopButton").addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+        document.getElementById("startButton").disabled = false;
+        document.getElementById("stopButton").disabled = true;
+        document.getElementById("pauseResumeButton").disabled = true;
+      }
+    });
+    
+    document.getElementById("pauseResumeButton").addEventListener("click", () => {
+      if (!mediaRecorder) return;
+      if (mediaRecorder.state === "recording") {
+        mediaRecorder.pause();
+        pauseStartTime = Date.now();
+        clearInterval(recordingTimerInterval);
+        document.getElementById("pauseResumeButton").innerText = "Resume Recording";
+        updateStatusMessage("Recording paused", "orange");
+      } else if (mediaRecorder.state === "paused") {
+        mediaRecorder.resume();
+        pausedTimeAccumulated += Date.now() - pauseStartTime;
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+        document.getElementById("pauseResumeButton").innerText = "Pause Recording";
+        updateStatusMessage("Recording resumed", "green");
+      }
+    });
+    
+    document.getElementById("transcribeButton").addEventListener("click", async () => {
+      const storedApiKey = sessionStorage.getItem("openai_api_key");
+      if (!storedApiKey || !sessionId) {
+        updateStatusMessage("API key or recording missing.", "red");
+        return;
+      }
+    
+      updateStatusMessage("Transcription in progress...", "blue");
+      const transcriptionStart = Date.now();
+      transcriptionTimerInterval = setInterval(() => {
+        document.getElementById("transcribeTimer").innerText = "Transcription Timer: " + Math.floor((Date.now() - transcriptionStart) / 1000) + " s";
+      }, 1000);
+    
+      try {
+        const response = await fetch(`${backendUrl}/transcribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: storedApiKey, session_id: sessionId })
+        });
+        const result = await response.json();
+        clearInterval(transcriptionTimerInterval);
+    
+        if (result.transcription) {
+          updateStatusMessage("Transcription complete!", "green");
+          document.getElementById("transcription").value = result.transcription;
+        } else {
+          updateStatusMessage("No transcription available.", "red");
+        }
+      } catch (error) {
+        updateStatusMessage("Transcription error: " + error, "red");
+      }
+    });
+    
+    // --- Note Generation Functionality ---
+    document.getElementById("generateNoteButton").addEventListener("click", async () => {
+      const transcriptionText = document.getElementById("transcription").value.trim();
+      if (!transcriptionText) {
+        alert("No transcription text available.");
+        return;
+      }
+      
+      // Use the custom prompt from the textarea.
+      const promptText = customPromptTextarea.value;
+      
+      document.getElementById("generatedNote").value = "Generating note, please wait...";
+      
+      try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + apiKey
+          },
+          body: JSON.stringify({
+            model: "gpt-4",
+            messages: [
+              { role: "system", content: promptText },
+              { role: "user", content: transcriptionText }
+            ],
+            temperature: 0.7
+          })
+        });
+        const result = await response.json();
+        if (result.choices && result.choices.length > 0) {
+          document.getElementById("generatedNote").value = result.choices[0].message.content.trim();
+        } else {
+          document.getElementById("generatedNote").value = "No note generated.";
+        }
+      } catch (error) {
+        document.getElementById("generatedNote").value = "Error generating note: " + error;
+      }
+    });
+  </script>
+</body>
+</html>
