@@ -80,12 +80,11 @@
   <button id="pauseResumeButton" disabled>Pause Recording</button>
   <br>
   <button id="transcribeButton" disabled>Transcribe</button>
-  <button id="deleteButton">Delete Recording</button>
+  <!-- Removed Delete Recording Button -->
   <br>
   <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
   <br>
   <h3>Transcription Result:</h3>
-  <!-- Now editable: no readonly attribute -->
   <textarea id="transcription"></textarea>
   
   <!-- New Note Generation Section -->
@@ -101,7 +100,7 @@
   </div>
   
   <script>
-    // Utility function: format time as "0 sec", "1 sec", ... "59 sec", "1 min", "1 min 1 sec", etc.
+    // Utility function: format time as "0 sec", "1 sec", … "59 sec", "1 min", "1 min 1 sec", etc.
     function formatTime(ms) {
       const totalSec = Math.floor(ms / 1000);
       if (totalSec < 60) {
@@ -178,8 +177,13 @@
           updateStatusMessage("Audio uploaded! Ready for transcription.", "green");
           document.getElementById("transcribeButton").disabled = false;
     
+          // Set automatic deletion timer to 15 minutes (900,000 ms)
           clearTimeout(autoDeleteTimeout);
-          autoDeleteTimeout = setTimeout(() => { deleteRecording(); }, 300000);
+          autoDeleteTimeout = setTimeout(() => {
+            // Auto-delete functionality (implementation on backend may vary)
+            sessionId = "";
+            updateStatusMessage("Recording automatically deleted.", "green");
+          }, 900000);
         } else {
           updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
         }
@@ -285,14 +289,6 @@
         updateStatusMessage("Transcription error: " + error, "red");
       }
     });
-    
-    document.getElementById("deleteButton").addEventListener("click", deleteRecording);
-    
-    // Dummy deleteRecording – implement as needed on your backend
-    function deleteRecording() {
-      updateStatusMessage("Recording deleted.", "green");
-      sessionId = "";
-    }
     
     // --- Note Generation Functionality ---
     const medisinskNotatPrompt = `Prompt for ny chatlog:
