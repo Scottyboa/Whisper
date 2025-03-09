@@ -182,6 +182,7 @@
       const storedPrompt = localStorage.getItem(key);
       customPromptTextarea.value = storedPrompt ? storedPrompt : "";
       autoResize(customPromptTextarea);
+      console.log("Loaded prompt for slot", slot, ":", customPromptTextarea.value);
     }
     
     // Save prompt on input and auto-resize
@@ -190,11 +191,13 @@
       const key = getPromptStorageKey(currentSlot);
       localStorage.setItem(key, customPromptTextarea.value);
       autoResize(customPromptTextarea);
+      console.log("Saved prompt for slot", currentSlot, ":", customPromptTextarea.value);
     });
     
     // When the dropdown changes, load corresponding prompt.
     promptSlotSelect.addEventListener("change", () => {
       loadPromptForSlot(promptSlotSelect.value);
+      console.log("Prompt slot changed to", promptSlotSelect.value);
     });
     
     // Auto-resize function for textareas
@@ -226,6 +229,7 @@
       const statusMessage = document.getElementById("statusMessage");
       statusMessage.innerText = message;
       statusMessage.style.color = color;
+      console.log("Status Message:", message);
     }
     
     function updateRecordingTimer() {
@@ -239,10 +243,12 @@
     }
     
     async function handleStop() {
+      console.log("MediaRecorder stopped, handling stop...");
       clearInterval(recordingTimerInterval);
       updateStatusMessage("Uploading audio... Please wait.", "blue");
     
       const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      console.log("Audio Blob size:", audioBlob.size, "bytes");
       const formData = new FormData();
       formData.append("file", audioBlob, "recorded.mp3");
     
@@ -257,6 +263,7 @@
         });
         const result = await response.json();
         clearInterval(uploadTimerInterval);
+        console.log("Upload result:", result);
     
         if (result.session_id) {
           sessionId = result.session_id;
@@ -269,12 +276,15 @@
           autoDeleteTimeout = setTimeout(() => {
             sessionId = "";
             updateStatusMessage("Recording automatically deleted.", "green");
+            console.log("Auto-delete timer triggered, session cleared.");
           }, 900000);
         } else {
           updateStatusMessage("Upload error: " + (result.error || "Unknown error"), "red");
+          console.error("Upload error:", result.error);
         }
       } catch (error) {
         updateStatusMessage("Error uploading file: " + error, "red");
+        console.error("Error uploading file:", error);
       }
     
       stopMicrophone();
@@ -284,15 +294,18 @@
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
+        console.log("Microphone stopped.");
       }
     }
     
     document.getElementById("startButton").addEventListener("click", async () => {
+      console.log("Start Recording button clicked.");
       // Clear any existing auto-delete timer so new recording overwrites previous session.
       clearTimeout(autoDeleteTimeout);
       
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("Media stream obtained.");
         mediaRecorder = new MediaRecorder(mediaStream);
         audioChunks = [];
         isPaused = false;
@@ -302,12 +315,15 @@
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
     
         mediaRecorder.ondataavailable = event => {
+          console.log("Data available event:", event.data.size, "bytes");
           if (event.data.size > 0) {
             audioChunks.push(event.data);
+            console.log("Audio chunk added, total chunks:", audioChunks.length);
           }
         };
         mediaRecorder.onstop = handleStop;
         mediaRecorder.start();
+        console.log("MediaRecorder started.");
     
         document.getElementById("startButton").disabled = true;
         document.getElementById("stopButton").disabled = false;
@@ -317,12 +333,15 @@
         updateStatusMessage("Recording in progress...");
       } catch (error) {
         updateStatusMessage("Microphone access error: " + error, "red");
+        console.error("Microphone access error:", error);
       }
     });
     
     document.getElementById("stopButton").addEventListener("click", () => {
+      console.log("Stop Recording button clicked.");
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
+        console.log("MediaRecorder stop called.");
         document.getElementById("startButton").disabled = false;
         document.getElementById("stopButton").disabled = true;
         document.getElementById("pauseResumeButton").disabled = true;
@@ -337,19 +356,23 @@
         clearInterval(recordingTimerInterval);
         document.getElementById("pauseResumeButton").innerText = "Resume Recording";
         updateStatusMessage("Recording paused", "orange");
+        console.log("Recording paused.");
       } else if (mediaRecorder.state === "paused") {
         mediaRecorder.resume();
         pausedTimeAccumulated += Date.now() - pauseStartTime;
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
         document.getElementById("pauseResumeButton").innerText = "Pause Recording";
         updateStatusMessage("Recording resumed", "green");
+        console.log("Recording resumed.");
       }
     });
     
     document.getElementById("transcribeButton").addEventListener("click", async () => {
+      console.log("Transcribe button clicked.");
       const storedApiKey = sessionStorage.getItem("openai_api_key");
       if (!storedApiKey || !sessionId) {
         updateStatusMessage("API key or recording missing.", "red");
+        console.error("Missing API key or sessionId.");
         return;
       }
     
@@ -367,20 +390,24 @@
         });
         const result = await response.json();
         clearInterval(transcriptionTimerInterval);
+        console.log("Transcription result:", result);
     
         if (result.transcription) {
           updateStatusMessage("Transcription complete!", "green");
           document.getElementById("transcription").value = result.transcription;
         } else {
           updateStatusMessage("No transcription available.", "red");
+          console.error("No transcription available.");
         }
       } catch (error) {
         updateStatusMessage("Transcription error: " + error, "red");
+        console.error("Transcription error:", error);
       }
     });
     
     // --- Note Generation Functionality with Streaming and Timer ---
     document.getElementById("generateNoteButton").addEventListener("click", async () => {
+      console.log("Generate Note button clicked.");
       const transcriptionText = document.getElementById("transcription").value.trim();
       if (!transcriptionText) {
         alert("No transcription text available.");
@@ -439,6 +466,7 @@
                 const textChunk = parsed.choices[0].delta?.content || "";
                 generatedNoteField.value += textChunk;
                 autoResize(generatedNoteField);
+                console.log("Note generation chunk received:", textChunk);
               } catch (err) {
                 console.error("Stream chunk parsing error:", err);
               }
@@ -447,10 +475,12 @@
         }
         clearInterval(noteTimerInterval);
         noteTimerElement.innerText = "Text generation completed!";
+        console.log("Note generation completed.");
       } catch (error) {
         clearInterval(noteTimerInterval);
         document.getElementById("generatedNote").value = "Error generating note: " + error;
         document.getElementById("noteTimer").innerText = "";
+        console.error("Error generating note:", error);
       }
     });
   </script>
