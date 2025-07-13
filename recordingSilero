@@ -26,6 +26,17 @@ const DEBUG = true;
  const sileroVADOptions = {
   // Force a final speech-end event when pause/stop is called, even mid-speech
   submitUserSpeechOnPause: true,
+  // ─── MODEL THRESHOLDS & SILENCE PARAMETERS ───────────────
+  // confidence ≥ 0.5 → speech
+  positiveSpeechThreshold: 0.5,
+  // confidence ≤ 0.35 → silence
+  negativeSpeechThreshold: 0.35,
+  // allow up to 3 “false-silence” frames before firing onSpeechEnd
+  redemptionFrames: 3,
+  // prepend 1 frame of audio before onSpeechStart
+  preSpeechPadFrames: 1,
+  // require at least 3 consecutive speech frames to declare onSpeechStart
+  minSpeechFrames: 3,
    onSpeechStart: () => {
      // Prevent VAD callbacks after stop
      if (manualStop) return;
