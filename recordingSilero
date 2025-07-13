@@ -299,11 +299,12 @@ async function transcribeChunkDirectly(wavBlob, chunkNum) {
   const formData = new FormData();
   formData.append("file", wavBlob, `chunk_${chunkNum}.wav`);
   formData.append("model", "gpt-4o-transcribe");
-  formData.append("temperature", "0.2");
-  formData.append("prompt",
-  "Transcribe only spoken words. Transcribe the audio as naturally as possible, including conversational fillers like 'um', 'yeah', 'okay', 'all right', hesitations, and unfinished sentences to reflect authentic, lifelike speech. Do NOT omit, summarize, or alter any spoken words or sentences."
+  formData.append("temperature", "0.1");
+  formData.append(
+  "prompt",
+  "Transcribe only the spoken words, exactly as heard, without omitting, summarizing, or altering any spoken content. Include all conversational fillers (such as 'um', 'yeah', 'okay', 'all right', 'hm', 'mm', 'nei', etc.), hesitations, false starts, stutters, repeated words, unfinished and interrupted sentences, and self-corrections. Transcribe overlapping or simultaneous speech when possible. Reflect every change in speaker as a new paragraph, even if the speaker is not named. Do not paraphrase or clean up grammar. Your goal is to produce a fully lifelike, raw, and unedited transcript."
 );
-  
+
   try {
     const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
