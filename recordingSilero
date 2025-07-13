@@ -33,11 +33,13 @@ const DEBUG = true;
      recordingActive = true;
      chunkStartTime = Date.now();
      // Start timer on first speech
-     if (!recordingTimerInterval) {
-       recordingStartTime = Date.now();
-       recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
-       updateStatusMessage("Recording…", "green");
-     }
+    // Always show “Recording…” when speech starts, even on Resume
+    updateStatusMessage("Recording…", "green");
+    // And still only start the timer once
+    if (!recordingTimerInterval) {
+      recordingStartTime     = Date.now();
+      recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+    }
    },
    onSpeechEnd: (audioFloat32) => {
      // Prevent VAD callbacks after stop
@@ -63,10 +65,7 @@ const DEBUG = true;
      }
    }
  };
- // Preload the Silero VAD model on page load
- vad.MicVAD.new(sileroVADOptions)
-   .then(instance => { sileroVAD = instance; })
-   .catch(err => logError("Failed to load Silero VAD:", err));
+
 function logDebug(message, ...optionalParams) {
   if (DEBUG) {
     console.debug(new Date().toISOString(), "[DEBUG]", message, ...optionalParams);
@@ -652,7 +651,9 @@ pauseResumeButton.addEventListener("click", async () => {
     // RESUME: start VAD again
     updateStatusMessage("Resuming recording…", "orange");
     try {
-      await sileroVAD.start();
+     // re-create the VAD (this will re-prompt/open the mic)
+     sileroVAD = await vad.MicVAD.new(sileroVADOptions);
+     await sileroVAD.start();
       recordingPaused = false;
       // Restart timer
       recordingStartTime = Date.now();
@@ -682,11 +683,17 @@ pauseResumeButton.addEventListener("click", async () => {
     // PAUSE: stop VAD and flush any buffered speech
     updateStatusMessage("Pausing recording…", "orange");
     try {
-      await sileroVAD.pause();       // use pause(), not stop()
+      await sileroVAD.pause();
       logInfo("Silero VAD paused");
     } catch (err) {
       logError("Error pausing Silero VAD:", err);
     }
+ // **actually stop the mic** that Silero opened:
+ if (sileroVAD.stream) {
+   sileroVAD.stream.getTracks().forEach(t => t.stop());
+ }
+    // **new**: cut the mic feed so the browser indicator goes off
+    stopMicrophone();
     // Stop the mic stream so the browser tab indicator turns off
     stopMicrophone();
     // Flush buffer if any
@@ -724,17 +731,21 @@ stopButton.addEventListener("click", async () => {
       }
     }
     // First pause VAD to emit final onSpeechEnd
-    if (sileroVAD) {
-      try {
-        await sileroVAD.pause();     // pause VAD to emit final onSpeechEnd
-        logInfo("Silero VAD paused on stop");
-      } catch (err) {
-        logError("Error pausing Silero VAD on stop:", err);
-      }
-      // then clean up the microphone
-      stopMicrophone();
-      sileroVAD = null;
+  if (sileroVAD) {
+    try {
+      await sileroVAD.pause();     // pause VAD to emit final onSpeechEnd
+      logInfo("Silero VAD paused on stop");
+    } catch (err) {
+      logError("Error pausing Silero VAD on stop:", err);
     }
+   // stop the mic Silero opened
+   if (sileroVAD.stream) {
+     sileroVAD.stream.getTracks().forEach(t => t.stop());
+   }
+   sileroVAD = null;
+  }
+  // **new**: absolutely kill the media tracks
+  stopMicrophone();
      // Stop the mic stream so the browser tab indicator turns off
     stopMicrophone();
 
@@ -871,3 +882,11 @@ stopButton.addEventListener("click", async () => {
 }
 
 export { initRecording };
+
+// As soon as the page loads, ensure we never auto-open the mic:
+window.addEventListener("load", () => {
+  stopMicrophone();
+  if (sileroVAD && typeof sileroVAD.pause === "function") {
+    sileroVAD.pause().catch(() => {});
+  }
+});
