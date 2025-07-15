@@ -817,11 +817,17 @@ stopButton.addEventListener("click", async () => {
       recordingTimerInterval = null;
     }
     // keep existing stopMicrophone, timers and flush logic intact
-  // — NEW: if there are no buffered frames (initial or between chunks), finish immediately
+  // ── If there's nothing left to transcribe (e.g. paused + all chunks done) ──
   if (audioFrames.length === 0 && pendingVADChunks.length === 0) {
-    
+    // stop the completion timer if it was running
+    clearInterval(completionTimerInterval);
+
+    // reset the displayed timer
     const compTimerElem = document.getElementById("transcribeTimer");
     if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
+
+    // restore the final green status
+    updateStatusMessage("Transcription finished!", "green");
 
     // Re-enable/disable buttons for a fresh start
     const startButton = document.getElementById("startButton");
