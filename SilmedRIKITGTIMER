@@ -808,7 +808,6 @@ stopButton.addEventListener("click", async () => {
     
     const compTimerElem = document.getElementById("transcribeTimer");
     if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
-    updateStatusMessage("Transcription finished!", "green");
 
     // Re-enable/disable buttons for a fresh start
     const startButton = document.getElementById("startButton");
@@ -829,7 +828,7 @@ stopButton.addEventListener("click", async () => {
     if (compTimerElem) {
       compTimerElem.innerText = "Completion Timer: 0 sec";
     }
-    updateStatusMessage("Transcription finished!", "green");
+  
     const startButton = document.getElementById("startButton");
     if (startButton) startButton.disabled = false;
     stopButton.disabled = true;
@@ -843,7 +842,6 @@ stopButton.addEventListener("click", async () => {
   if (audioFrames.length === 0 && !processedAnyAudioFrames) {
     // No speech ever detected → treat as instant transcription complete
     resetRecordingState();
-    updateStatusMessage("Transcription finished!", "green");
     // Force completion timer back to zero
     const compTimerElem = document.getElementById("transcribeTimer");
     if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
