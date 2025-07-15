@@ -288,6 +288,7 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
   const processedData = renderedBuffer.getChannelData(0);
   const processedInt16 = floatTo16BitPCM(processedData);
   const wavBlob = encodeWAV(processedInt16, targetSampleRate, 1);
+  await offlineCtx.close();
   return wavBlob;
 }
 
@@ -476,6 +477,7 @@ function updateTranscriptionOutput() {
     clearInterval(completionTimerInterval);
     updateStatusMessage("Transcription finished!", "green");
     logInfo("Transcription complete.");
+    transcriptChunks = {};
   }
 }
 
@@ -516,24 +518,28 @@ function encodeWAV(samples, sampleRate, numChannels) {
   return new Blob([view], { type: 'audio/wav' });
 }
 
- function scheduleChunk() {
-   if (!recordingActive || manualStop || recordingPaused) return;
+function scheduleChunk() {
+  // bail out immediately if we’ve stopped or paused
+  if (!recordingActive || manualStop || recordingPaused) return;
 
-   const elapsed     = Date.now() - chunkStartTime;
-   const silenceFor  = Date.now() - lastSpeechTime;
+  const elapsed     = Date.now() - chunkStartTime;
+  const silenceFor  = Date.now() - lastSpeechTime;
 
-   if (elapsed >= MIN_CHUNK_DURATION && silenceFor >= SILENCE_DURATION) {
+  if (elapsed >= MIN_CHUNK_DURATION && silenceFor >= SILENCE_DURATION) {
     logInfo("Silence detected after min-duration; closing chunk.");
     safeProcessAudioChunk();
     recordingActive  = false;
     chunkStartTime   = Date.now();
     lastSpeechTime   = Date.now();
-    // — NEW: log that we’re now listening for the next speech segment
     logInfo("Listening for speech…");
-   }
 
-   chunkTimeoutId = setTimeout(scheduleChunk, 500);
- }
+    // after closing a chunk we do NOT immediately re‑arm the timer;
+    // we’ll wait for next `onSpeechStart` to call scheduleChunk again
+  } else {
+    // only re‑schedule while still in the middle of a potential chunk
+    chunkTimeoutId = setTimeout(scheduleChunk, 500);
+  }
+}
 
 function resetRecordingState() {
   // ─── Clear any old completion timer (we’re starting fresh) ───
@@ -656,12 +662,16 @@ function initRecording() {
 
 pauseResumeButton.addEventListener("click", async () => {
   if (recordingPaused) {
-    // RESUME: start VAD again
+    // RESUME: destroy old VAD and start a fresh one
     updateStatusMessage("Resuming recording…", "orange");
     try {
-     // re-create the VAD (this will re-prompt/open the mic)
-     sileroVAD = await vad.MicVAD.new(sileroVADOptions);
-     await sileroVAD.start();
+      // ── destroy previous VAD instance to free WASM and buffers ──
+      if (sileroVAD && typeof sileroVAD.destroy === "function") {
+        await sileroVAD.destroy();
+      }
+      // re-create the VAD (this will re-prompt/open the mic)
+      sileroVAD = await vad.MicVAD.new(sileroVADOptions);
+      await sileroVAD.start();
       recordingPaused = false;
       // Restart timer
       recordingStartTime = Date.now();
@@ -746,11 +756,15 @@ stopButton.addEventListener("click", async () => {
     } catch (err) {
       logError("Error pausing Silero VAD on stop:", err);
     }
-   // stop the mic Silero opened
-   if (sileroVAD.stream) {
-     sileroVAD.stream.getTracks().forEach(t => t.stop());
-   }
-   sileroVAD = null;
+    // stop the mic Silero opened
+    if (sileroVAD.stream) {
+      sileroVAD.stream.getTracks().forEach(t => t.stop());
+    }
+    // destroy the VAD instance to free WASM/model memory
+    if (typeof sileroVAD.destroy === "function") {
+      await sileroVAD.destroy();
+    }
+    sileroVAD = null;
   }
   // **new**: absolutely kill the media tracks
   stopMicrophone();
