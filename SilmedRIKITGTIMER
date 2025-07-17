@@ -826,8 +826,7 @@ stopButton.addEventListener("click", async () => {
     const compTimerElem = document.getElementById("transcribeTimer");
     if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
 
-    // restore the final green status
-    updateStatusMessage("Transcription finished!", "green");
+    updateTranscriptionOutput();
 
     // Re-enable/disable buttons for a fresh start
     const startButton = document.getElementById("startButton");
@@ -848,6 +847,7 @@ stopButton.addEventListener("click", async () => {
     if (compTimerElem) {
       compTimerElem.innerText = "Completion Timer: 0 sec";
     }
+
   
     const startButton = document.getElementById("startButton");
     if (startButton) startButton.disabled = false;
