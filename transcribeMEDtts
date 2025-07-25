@@ -1,1 +1,606 @@
-hei
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
+<script src="path/to/your/recording.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+ <!-- 1) Load Google’s Funding Choices library -->
+ <script async src="https://fundingchoicesmessages.google.com/i/pub-3747901131960450?ers=1"></script>
+
+ <!-- 2) Immediately signal that Funding Choices is running -->
+ <script>
+    (function() {
+      function signalGooglefcPresent() {
+        if (!window.frames['googlefcPresent']) {
+          if (document.body) {
+            const iframe = document.createElement('iframe');
+            iframe.style = 'width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;';
+            iframe.style.display = 'none';
+            iframe.name = 'googlefcPresent';
+            document.body.appendChild(iframe);
+          } else {
+            setTimeout(signalGooglefcPresent, 0);
+          }
+        }
+      }
+      signalGooglefcPresent();
+    })();
+  </script>  <title id="page-title-transcribe">Transcribe Notes – AI Medical Transcription & Clinical Notes for Doctors</title>
+  <!-- Meta description for crawlers -->
+  <meta name="description"
+        content="Secure, AI-powered medical transcription and clinical note generation for healthcare professionals. Ideal for documenting hypertension, diabetes, COPD, and medication regimens." />
+
+  <!-- Meta keywords (for legacy bidders) -->
+  <meta name="keywords"
+        content="medical transcription, clinical notes, AI for doctors, pharmaceutical, medications, hypertension, diabetes, COPD, healthcare professional, semaglutide, Ozempic, Vimovo, apixaban, Eliquis, lisdexamfetamine, Aduvanz, omalizumab, Xolair, fremanezumab, Ajovy, rivaroxaban, Xarelto, alirocumab, Praluent, methylphenidate, Ritalin, dapagliflozin, Forxiga, atorvastatin, Lipitor, mirabegron, Betmiga, methotrexate, Metex, valsartan, sakubitril, Entresto, empagliflozin, Jardiance, tree pollen, Itulazax, mesalazine, Asacol, grass pollen, Grazax, erenumab, Aimovig, metoprolol, Selo-Zok, formoterol, glykopyrroniumbromid"/>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Transcribe Notes – AI Medical Transcription & Clinical Notes for Doctors">
+  <meta property="og:description" content="Secure, AI-powered medical transcription and clinical note generation for healthcare professionals.">
+  <meta property="og:image" content="https://transcribe-notes.netlify.app/Preview.png">
+  <meta property="og:url" content="https://transcribe-notes.netlify.app/transcribe.html">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Transcribe Notes – AI Medical Transcription & Clinical Notes for Doctors">
+  <meta name="twitter:description" content="Secure, AI-powered medical transcription and clinical note generation for healthcare professionals.">
+  <meta name="twitter:image" content="https://transcribe-notes.netlify.app/Preview.png">
+
+
+<script async src="https://securepubads.g.doubleclick.net/tag/js/gpt.js"></script>
+<script>
+  window.googletag = window.googletag || { cmd: [] };
+  googletag.cmd.push(function() {
+    // define slots and save them globally
+    window.slotTopLeft     = googletag.defineSlot('/23295908256/Big-top-left',  [300,600], 'div-gpt-ad-1744469658576-0').addService(googletag.pubads());
+    window.slotTopRight    = googletag.defineSlot('/23295908256/big-top-right',[300,600], 'div-gpt-ad-1744469682244-0').addService(googletag.pubads());
+    window.slotBottomLeft  = googletag.defineSlot('/23295908256/bottom-left',  [300,250], 'div-gpt-ad-1744473133809-0').addService(googletag.pubads());
+    window.slotBottomRight = googletag.defineSlot('/23295908256/bottom-right',[300,250], 'div-gpt-ad-1744473114007-0').addService(googletag.pubads());
+
+    // declare inventory as refreshable…
+    googletag.pubads().setTargeting('refreshable','true');
+    // …and fetch all slots in a single request
+    googletag.pubads().enableSingleRequest();
+    googletag.pubads().setForceSafeFrame(true);
+
+    // only call enableServices() once
+    googletag.enableServices();
+  });
+</script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&family=Merriweather:wght@300;400&display=swap"
+    rel="stylesheet"
+  />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://transcribe-notes.netlify.app/#organization",
+      "name": "Transcribe Notes",
+      "url": "https://transcribe-notes.netlify.app/"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://transcribe-notes.netlify.app/#website",
+      "url": "https://transcribe-notes.netlify.app/",
+      "name": "Transcribe Notes",
+      "publisher": {
+        "@id": "https://transcribe-notes.netlify.app/#organization"
+      }
+    },
+    {
+      "@type": "MedicalWebPage",
+      "@id": "https://transcribe-notes.netlify.app/transcribe.html#medicalwebpage",
+      "url": "https://transcribe-notes.netlify.app/transcribe.html",
+      "name": "Transcribe Notes – Medical Transcription for Clinicians",
+      "description": "An AI-powered medical transcription and clinical note tool for doctors, covering conditions like hypertension, diabetes, COPD, and medication management."
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://transcribe-notes.netlify.app/#software",
+      "name": "Transcribe Notes",
+      "applicationCategory": "MedicalApplication",
+      "operatingSystem": "All",
+      "description": "Secure AI-powered medical transcription and note generation for healthcare professionals. Supports documentation of medications such as Atorvastatin, Metformin, Seretide.",
+      "url": "https://transcribe-notes.netlify.app/",
+      "author": {
+        "@id": "https://transcribe-notes.netlify.app/#organization"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0.00",
+        "priceCurrency": "USD"
+      },
+      "audience": {
+        "@type": "Audience",
+        "audienceType": "Healthcare Professional"
+      },
+      "keywords": "medical transcription, clinical notes, pharmaceutical, medications, hypertension, diabetes, COPD, healthcare professional, semaglutide, Ozempic, apixaban, Eliquis, lisdexamfetamine, Aduvanz, omalizumab, Xolair, fremanezumab, Ajovy, rivaroxaban, Xarelto, alirocumab, Praluent, methylphenidate, Ritalin, dapagliflozin, Forxiga, atorvastatin, Lipitor, mirabegron, Betmiga, methotrexate, Metex, valsartan, sakubitril, Entresto, empagliflozin, Jardiance, tree pollen, Itulazax, mesalazine, Asacol, grass pollen, Grazax, erenumab, Aimovig, metoprolol, Selo-Zok, formoterol, glykopyrroniumbromid"
+    }
+  ]
+}
+</script>
+  <style>
+    /* Base Styles */
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background-color: #f8f8f8;
+      color: #333;
+    }
+    /* Grid Layout: Single Row, 3 Columns */
+    .grid-container {
+      display: grid;
+      grid-template-columns: 300px 1fr 300px; /* Left sidebar, main content, right sidebar */
+      grid-template-rows: auto; /* Allow rows to size based on content */
+      min-height: 1200px;       /* Ensure the grid is always at least 1200px tall */
+    }
+    /* Left Sidebar - Updated: No padding and no gap so ads fill the space */
+    .sidebar {
+      grid-column: 1 / 2;
+      grid-row: 1 / 2;
+      background-color: #e0e0e0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+    /* Right Sidebar (Ad Area) */
+    .ad-sidebar {
+      grid-column: 3 / 4;
+      grid-row: 1 / 2;
+      background-color: #e0e0e0;
+      /* Remove top padding so the ad is pushed up */
+      padding: 0 20px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    /* Main Content */
+    .main-content {
+      grid-column: 2 / 3;
+      grid-row: 1 / 2;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      /* Remove horizontal padding so top bar is flush with sidebars */
+      padding: 0;
+    }
+    /* Top Bar within main content */
+    .top-bar {
+      background-color: #e0e0e0; /* Matches sidebars */
+      padding: 20px;            /* Increased padding for a thicker bar */
+      margin-bottom: 20px;      /* Space below the top bar */
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .top-bar button {
+      font-size: 18px;
+      padding: 10px 20px;
+    }
+    /* Language Container in Top Bar (right side) */
+    #lang-container-transcribe {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #lang-icon-transcribe {
+      width: 36px;
+      height: 36px;
+    }
+    #lang-select-transcribe {
+      padding: 5px;
+      font-size: 18px;
+    }
+    /* Recording Area */
+    .recording-area {
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 20px;
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+    .recording-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .timer {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    /* Cost Overview Hyperlink */
+    #openaiUsageLink {
+      font-size: 30;
+      font-family: inherit;
+      text-decoration: underline;
+      color: blue;
+      margin: 0;
+    }
+    #openaiUsageLink:hover {
+      color: darkblue;
+    }
+    /* Auto-resizing Textareas */
+    #transcription,
+    #generatedNote,
+    #customPrompt {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+      margin-bottom: 20px;
+      font-family: 'Roboto', sans-serif;
+      resize: none;
+    }
+    #transcription {
+      resize: vertical;
+    }
+#transcription {
+  min-height: 150px;
+  resize: vertical;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#generatedNote {
+  min-height: 750px; 
+  resize: vertical;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+    #customPrompt {
+      min-height: 200px;
+      resize: vertical; /* user can resize manually */
+    }
+    /* Button Styles */
+    button {
+      background-color: #5a9;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.1s;
+      margin: 10px;
+    }
+    button:hover {
+      background-color: #489;
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    button:disabled {
+      background-color: #ccc;
+      color: #666;
+      cursor: not-allowed;
+      opacity: 0.6;
+      transition: none;
+      transform: none;
+    }
+    /* Bottom Half: Two Columns */
+    .bottom-half {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      padding: 0 20px; /* Maintain side padding for bottom half content */
+    }
+    .column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    /* Ad Containers for Right Sidebar */
+    #right-ad-unit-1 {
+      width: 300px;
+      min-height: 250px;
+      background: transparent;
+      margin-bottom: 0;
+    }
+    #right-ad-unit-2 {
+      width: 300px;
+      min-height: 250px;
+      background: transparent;
+      margin-top: 10px;
+    }
+    /* Ad Containers for Left Sidebar */
+    #left-ad-unit-1 {
+      width: 100%;
+      min-height: 150px;
+      background: transparent;
+      margin-bottom: 10px;
+    }
+    #left-ad-unit-2 {
+      width: 100%;
+      min-height: 150px;
+      background: transparent;
+    }
+    /* Hide leftover forced-color-adjust elements */
+    div[style*="forced-color-adjust: initial"] {
+      display: none !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    /* Guide Overlay Styles */
+    #guideView {
+      display: none;
+      position: fixed;
+      top: 10%;
+      left: 10%;
+      width: 80%;
+      height: 80%;
+      background: white;
+      border: 2px solid #ccc;
+      padding: 20px;
+      overflow-y: auto;
+      z-index: 2000;
+    }
+    #guideView.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-container">
+    <!-- Left Sidebar (reserved for ads) with two new ad units -->
+    <aside class="sidebar">
+<!-- /23295908256/Big-top-left -->
+<div id='div-gpt-ad-1744469658576-0' style='min-width: 300px; min-height: 600px;'>
+  <script>
+    googletag.cmd.push(function() { googletag.display('div-gpt-ad-1744469658576-0'); });
+  </script>
+</div>
+<!-- /23295908256/bottom-left -->
+<div id='div-gpt-ad-1744473133809-0' style='min-width: 300px; min-height: 250px;'>
+  <script>
+    googletag.cmd.push(function() { googletag.display('div-gpt-ad-1744473133809-0'); });
+  </script>
+</div>
+    </aside>
+    <!-- Main Content (center column) -->
+    <main class="main-content">
+      <!-- Top Bar inside Main Content -->
+<!-- Top Bar inside Main Content -->
+<div class="top-bar">
+  <!-- Back to frontpage button stays on the far left -->
+  <button id="backToHomeButton" onclick="window.history.back()">Back to frontpage</button>
+
+  <!-- Group for "Read first! ➔" and Guide button -->
+  <div class="mid-controls" style="display: flex; align-items: center;">
+  <span id="read-first-text" style="font-size: 28px; color: black; margin-right: 10px;">Read first! ➔</span>
+    <button id="btnGuide">Guide</button>
+  </div>
+
+  <!-- Language container remains on the far right -->
+  <div id="lang-container-transcribe">
+    <img src="language-icon.png" alt="Language Icon" id="lang-icon-transcribe" />
+    <select id="lang-select-transcribe">
+      <option value="en">English</option>
+      <option value="no">Norsk</option>
+      <option value="sv">Svenska</option>
+      <option value="de">Deutsch</option>
+      <option value="fr">Français</option>
+      <option value="it">Italiano</option>
+    </select>
+  </div>
+</div>
+      <!-- Recording Area -->
+      <div class="recording-area">
+<div class="recording-header">
+  <h3 id="recordingAreaTitle">Recording Area</h3>
+  <a id="openaiUsageLink" href="https://platform.openai.com/usage" target="_blank" rel="noopener noreferrer">
+    Cost usage overview
+  </a>
+  <!-- New hyperlink added next to the existing one -->
+  <a id="openaiWalletLink" href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">
+    <!-- The visible text will be set using language translations -->
+  </a>
+</div>
+        <div id="recordTimer" class="timer">Recording Timer: 0 sec</div>
+        <div id="transcribeTimer" class="timer">Completion Timer: 0 sec</div>
+        <textarea id="transcription" placeholder="Transcription result will appear here..."></textarea>
+        <div>
+          <button id="startButton">Start Recording</button>
+          <button id="stopButton" disabled>Stop/Complete</button>
+          <button id="pauseResumeButton" disabled>Pause Recording</button>
+        </div>
+        <div id="statusMessage">Welcome! Click "Start Recording" to begin.</div>
+      </div>
+      <!-- Note Generation & Custom Prompt -->
+      <div class="bottom-half">
+        <div class="column">
+          <h3 id="noteGenerationTitle">Note Generation</h3>
+          <button id="generateNoteButton">Generate Note</button>
+          <div id="noteTimer" class="timer">Note Generation Timer: 0 sec</div>
+          <textarea id="generatedNote" placeholder="Generated note will appear here..."></textarea>
+         
+        </div>
+        <div class="column">
+          <h3 id="customPromptTitle">Custom Prompt</h3>
+          <label for="promptSlot" id="promptSlotLabel">Prompt Slot:</label>
+          <select id="promptSlot">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+          </select>
+          <textarea id="customPrompt" placeholder="Enter custom prompt here" rows="1"></textarea>
+          <button id="ttsButton" class="btn">Play TTS</button>
+          <div class="voice-selector" style="margin-top: 0.5rem;">
+            <label for="voiceSelect">Voice:</label>
+            <select id="voiceSelect">
+              <option value="alloy">Alloy</option>
+              <option value="ash">Ash</option>
+              <option value="ballad">Ballad</option>
+              <option value="coral">Coral</option>
+              <option value="echo">Echo</option>
+              <option value="fable">Fable</option>
+              <option value="onyx">Onyx</option>
+              <option value="nova">Nova</option>
+              <option value="sage">Sage</option>
+              <option value="shimmer">Shimmer</option>
+              <option value="verse">Verse</option>
+            </select>
+          </div>
+          <div class="instructions-container" style="margin-top: 0.5rem;">
+            <label for="ttsInstructions">Instructions:</label>
+            <textarea id="ttsInstructions"
+                      placeholder="Enter TTS instructions (e.g., 'Read with a British accent.')"
+                      rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+    </main>
+    <!-- Right Sidebar (Ad Area) -->
+    <aside class="ad-sidebar">
+<!-- /23295908256/big-top-right -->
+<div id='div-gpt-ad-1744469682244-0' style='min-width: 300px; min-height: 600px;'>
+  <script>
+    googletag.cmd.push(function() { googletag.display('div-gpt-ad-1744469682244-0'); });
+  </script>
+</div>
+<!-- /23295908256/bottom-right -->
+<div id='div-gpt-ad-1744473114007-0' style='min-width: 300px; min-height: 250px;'>
+  <script>
+    googletag.cmd.push(function() { googletag.display('div-gpt-ad-1744473114007-0'); });
+  </script>
+</div>
+    </aside>
+  </div>
+
+  <!-- Guide Overlay (outside the grid container) -->
+  <div id="guideView">
+    <h3 id="guideHeading">Guide & Instructions</h3>
+    <p id="guideText"></p>
+  </div>
+
+  <!-- Inline script to toggle the guide overlay -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const btnGuide = document.getElementById("btnGuide");
+      const guideView = document.getElementById("guideView");
+      if (btnGuide && guideView) {
+        btnGuide.addEventListener("click", function () {
+          guideView.classList.toggle("active");
+        });
+      }
+    });
+  </script>
+
+
+
+  <!-- Enforce grid container height on load, resize, and after a short delay -->
+  <script>
+    function setGridHeight() {
+      const grid = document.querySelector(".grid-container");
+      if (grid) {
+        let height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        grid.style.height = height + "px";
+      }
+    }
+    window.addEventListener("load", function () {
+      setGridHeight();
+      let interval = setInterval(setGridHeight, 200);
+      setTimeout(() => clearInterval(interval), 2000);
+    });
+    window.addEventListener("resize", setGridHeight);
+  </script>
+
+<script>
+  // 1) Generate or retrieve a per‑browser anonymous visitorId
+  let visitorId = localStorage.getItem('visitorId');
+  if (!visitorId) {
+    visitorId = (crypto.randomUUID && crypto.randomUUID()) ||
+                Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('visitorId', visitorId);
+  }
+
+  // 2) Helper to log an event to your Apps Script
+  function logEvent(params) {
+    const baseUrl = 'https://script.google.com/macros/s/AKfycbzBIvbc-xWbqzBz-PQK-lW1s2I3aCSq8rGtJV3sxN8rPRmpqGCm3J5t1R1yVt9keKK5/exec';
+    const qs = new URLSearchParams({
+      visitorId,
+      page: window.location.pathname,
+      userAgent: navigator.userAgent,
+      referrer: document.referrer,
+      ...params
+    }).toString();
+    fetch(`${baseUrl}?${qs}`, { mode: 'no-cors' });
+  }
+
+  // 3) Immediately log the pageview
+  logEvent({ action: 'pageview' });
+
+  // 4) Once DOM is ready, attach your button listeners
+  document.addEventListener('DOMContentLoaded', () => {
+    const stopButton = document.getElementById('stopButton');
+    if (stopButton) {
+      stopButton.addEventListener('click', () => {
+        logEvent({ action: 'stopRecording' });
+      });
+    }
+
+    const generateNoteButton = document.getElementById('generateNoteButton');
+    if (generateNoteButton) {
+      generateNoteButton.addEventListener('click', () => {
+        logEvent({ action: 'noteGeneration' });
+      });
+    }
+  });
+</script>
+
+  <!-- Import the main module to initialize language, recording, note generation, and UI functionalities -->
+  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/tts.js"></script>
+<script>
+  googletag.cmd.push(function() {
+    // reuse the slots you already defined above
+    const refreshSlots = [
+      window.slotTopLeft,
+      window.slotTopRight,
+      window.slotBottomLeft,
+      window.slotBottomRight
+    ];
+
+    // simple cooldown
+    let lastRefresh = Date.now();
+    const MIN_REFRESH_INTERVAL = 10 * 60 * 1000; // 5 min cooldown
+
+    function refreshAds() {
+      const now = Date.now();
+      if (now - lastRefresh < MIN_REFRESH_INTERVAL) return;
+      // refresh without changing the correlator
+      googletag.pubads().refresh(refreshSlots, { changeCorrelator: false });
+      lastRefresh = now;
+      console.log('Ads refreshed at', new Date().toLocaleTimeString());
+    }
+
+    // hook into your existing buttons
+    ['startButton','stopButton','generateNoteButton']
+      .forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', refreshAds);
+      });
+  });
+</script>
+</body>
+</html>
