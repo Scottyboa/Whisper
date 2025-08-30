@@ -341,15 +341,14 @@ async function transcribeChunkDirectly(wavBlob, chunkNum) {
      const payload = {
        // Small model (chat with audio)
        model: "voxtral-small-latest",
-       temperature: 0,
+       temperature: 0.2,
        messages: [{
          role: "user",
          content: [
            { type: "input_audio", input_audio: audio_b64 },
            // Keep this instruction ultra-constrained so it behaves like ASR
            { type: "text", text:
-             "Transcribe the audio EXACTLY." +
-             "Return ONLY the verbatim transcript text (no quotes, no notes, no labels)."
+             "Transcribe the audio in the detected language. If the system detects Danish, transcribe instead using Norwegian Bokmål. Otherwise, use the detected language."
            }
          ]
        }]
