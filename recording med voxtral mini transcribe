@@ -6,6 +6,17 @@ let transcriptionError = false;
  // Proxy endpoint (Vercel)
  const PROXY_URL = "https://transcribe-notes-five.vercel.app/api/transcribe";
 
+// --- Experiment toggle: use Voxtral Small via chat ---
+const USE_VOXTRAL_SMALL = true;
+
+async function blobToBase64(blob) {
+  const buf = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
 function hashString(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -322,29 +333,56 @@ async function transcribeChunkDirectly(wavBlob, chunkNum) {
   const apiKey = getAPIKey();
   if (!apiKey) throw new Error("API key not available for transcription");
   
-  const formData = new FormData();
-  formData.append("file", wavBlob, `chunk_${chunkNum}.wav`);
-  formData.append("model", "voxtral-mini-latest");
-  try {
-     const response = await sendChunk(formData);
-    if (!response.ok) {
-      // Attempt to parse JSON error
-  let errText;
-  try {
-    const errJson = await response.json();
-    if (errJson?.error?.code === "insufficient_quota") {
-      updateStatusMessage("Error: You have exceeded your Mistral quota or have no credits left.","red");
-      transcriptionError = true;
-      return "";
+ try {
+   let response;
+   if (USE_VOXTRAL_SMALL) {
+     // --- Chat route with Voxtral Small ---
+     const audio_b64 = await blobToBase64(wavBlob);
+     const payload = {
+       // Small model (chat with audio)
+       model: "voxtral-small-latest",
+       temperature: 0,
+       messages: [{
+         role: "user",
+         content: [
+           { type: "input_audio", input_audio: audio_b64 },
+           // Keep this instruction ultra-constrained so it behaves like ASR
+           { type: "text", text:
+             "Transcribe the audio EXACTLY." +
+             "Return ONLY the verbatim transcript text (no quotes, no notes, no labels)."
+           }
+         ]
+       }]
+     };
+     response = await fetch(PROXY_URL + "?mode=chat", {
+       method: "POST",
+       headers: { "x-api-key": apiKey, "content-type": "application/json" },
+       body: JSON.stringify(payload)
+     });
+   } else {
+     // --- Original fast transcription route (Mini Transcribe) ---
+     const formData = new FormData();
+     formData.append("file", wavBlob, `chunk_${chunkNum}.wav`);
+     formData.append("model", "voxtral-mini-latest");
+     // (Optional) try forcing language if you want:
+     // formData.append("language", "nb");
+     response = await sendChunk(formData);
+   }
+    if (!response.ok) { /* existing error parsing */ }
+    const json = await response.json();
+    if (USE_VOXTRAL_SMALL) {
+      // Chat responses return choices[0].message.content (array of parts or string)
+      const parts = json?.choices?.[0]?.message?.content;
+      if (Array.isArray(parts)) {
+        const textPart = parts.find(p => p.type === "text");
+        return (textPart && textPart.text) ? textPart.text : "";
+      }
+      // Some SDKs return a string directly:
+      return typeof parts === "string" ? parts : "";
+    } else {
+      // Transcriptions endpoint
+      return json.text || "";
     }
-    errText = errJson?.error?.message || JSON.stringify(errJson);
-  } catch {
-    errText = await response.text();
-  }
-  throw new Error(`Mistral API error: ${errText}`);
-    }
-const resultJson = await response.json();
-return resultJson.text || "";
   } catch (error) {
     logError(`Error transcribing chunk ${chunkNum}:`, error);
     // Show tailored message if it really was a quota issue
