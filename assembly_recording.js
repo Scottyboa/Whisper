@@ -317,7 +317,9 @@ async function transcribeChunkDirectly(wavBlob, chunkNum) {
       throw new Error(`AssemblyAI upload error ${response.status}: ${msg}`);
     }
 
-    const { id } = await response.json();
+    const { id, endpoint } = await response.json();
+    console.log("Transcript ID:", id, "AssemblyAI Endpoint:", endpoint);
+
     let transcript = "";
 
     while (true) {
