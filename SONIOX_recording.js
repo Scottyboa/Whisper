@@ -369,9 +369,7 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
 async function transcribeChunkDirectly(wavBlob, chunkNum) {
   // Build a domain/context string like your old prompt, but Soniox expects 'context'
   const context =
-    "Doctor–patient consultation. Mostly Norwegian; sometimes other languages. " +
-    "Transcribe verbatim: include fillers, hesitations, false starts, repeats, " +
-    "unfinished/overlapped speech. New paragraph on speaker change. Do not paraphrase.";
+    "Doctor–patient consultation. Transcribe accurately and clearly. Exclude filler words, hesitations, false starts, and background noises. Maintain complete sentences. Do not paraphrase or summarize.";
   try {
     const filename = `chunk_${chunkNum}.wav`;
     // 1) upload the WAV
