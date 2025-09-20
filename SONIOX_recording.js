@@ -285,7 +285,52 @@ async function fetchSonioxTranscriptText(transcriptionId) {
   return j.text || "";
 }
 
+// ─────────────────── Deletion helpers (place right after fetchSonioxTranscriptText) ───────────────────
+async function deleteSonioxTranscription(transcriptionId) {
+  if (!transcriptionId) return;
+  const apiKey = getAPIKey();
+  try {
+    const rsp = await fetch(`${SONIOX_BASE}/transcriptions/${transcriptionId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!rsp.ok) {
+      const msg = await rsp.text();
+      logDebug(`Delete transcription ${transcriptionId} non-OK: ${msg}`);
+    } else {
+      logInfo(`Deleted transcription ${transcriptionId}`);
+    }
+  } catch (e) {
+    logDebug(`Delete transcription ${transcriptionId} failed:`, e);
+  }
+}
 
+async function deleteSonioxFile(fileId) {
+  if (!fileId) return;
+  const apiKey = getAPIKey();
+  try {
+    const rsp = await fetch(`${SONIOX_BASE}/files/${fileId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!rsp.ok) {
+      const msg = await rsp.text();
+      logDebug(`Delete file ${fileId} non-OK: ${msg}`);
+    } else {
+      logInfo(`Deleted file ${fileId}`);
+    }
+  } catch (e) {
+    logDebug(`Delete file ${fileId} failed:`, e);
+  }
+}
+
+async function cleanupSonioxResources({ transcriptionId, fileId }) {
+  // Best-effort cleanup; do not throw.
+  await Promise.allSettled([
+    deleteSonioxTranscription(transcriptionId),
+    deleteSonioxFile(fileId),
+  ]);
+}
 
 // --- OfflineAudioContext Processing ---
 // This function takes interleaved PCM samples (Float32Array), the original sample rate, and the number of channels,
@@ -364,33 +409,42 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
   return wavBlob;
 }
 
-// --- New: Transcribe Chunk Directly ---
-// Sends the WAV blob directly to OpenAI's Whisper API and returns the transcript.
-async function transcribeChunkDirectly(wavBlob, chunkNum) {
-  // Build a domain/context string like your old prompt, but Soniox expects 'context'
+ // --- New: Transcribe Chunk Directly ---
+
+// Sends the WAV blob to Soniox and returns the transcript text; cleans up after.
+ async function transcribeChunkDirectly(wavBlob, chunkNum) {
+   // Build a domain/context string like your old prompt, but Soniox expects 'context'
   const context =
-    "Doctor–patient consultation. Transcribe accurately and clearly. Exclude filler words, hesitations, false starts, and background noises. Maintain complete sentences. Do not paraphrase or summarize.";
+    "Doctor-patient consultation. Mostly Norwegian; sometimes English. " +
+    "Transcribe clearly. Exclude filler words and false starts. Do not paraphrase or summarize.";
+  let fileId = null;
+  let txId = null;
   try {
     const filename = `chunk_${chunkNum}.wav`;
     // 1) upload the WAV
-    const fileId = await uploadToSonioxFile(wavBlob, filename);
+    fileId = await uploadToSonioxFile(wavBlob, filename);
     // 2) create a transcription job on Soniox async model
-    const txId = await createSonioxTranscription(fileId, context);
+    txId = await createSonioxTranscription(fileId, context);
     // 3) poll until done
     await pollSonioxTranscription(txId);
     // 4) fetch final text
     const text = await fetchSonioxTranscriptText(txId);
+    // 5) best-effort cleanup
+    await cleanupSonioxResources({ transcriptionId: txId, fileId });
     return text || "";
   } catch (error) {
-    logError(`Error transcribing chunk ${chunkNum}:`, error);
-    updateStatusMessage(
-      "Transcription error with Soniox API. Check key/credits or try again.",
-      "red"
-    );
-    transcriptionError = true;
-    return `[Error transcribing chunk ${chunkNum}]`;
-  }
-}
+     logError(`Error transcribing chunk ${chunkNum}:`, error);
+    // try to clean up anything we created
+    await cleanupSonioxResources({ transcriptionId: txId, fileId });
+     updateStatusMessage(
+       "Transcription error with Soniox API. Check key/credits or try again.",
+       "red"
+     );
+     transcriptionError = true;
+     return `[Error transcribing chunk ${chunkNum}]`;
+   }
+ }
+
 
 // --- Transcription Queue Processing ---
 // Adds a processed chunk to the queue and processes chunks sequentially.
@@ -684,6 +738,10 @@ function initRecording() {
   startButton.addEventListener("click", async () => {
     // Retrieve the API key before starting.
     const apiKey = getAPIKey();
+  if (!apiKey) {
+    alert("Please enter your Soniox API key first.");
+    return;
+  }
     resetRecordingState();
     const transcriptionElem = document.getElementById("transcription");
     if (transcriptionElem) transcriptionElem.value = "";
