@@ -275,14 +275,40 @@ async function pollSonioxTranscription(transcriptionId, timeoutMs = 300000, inte
   }
 }
 
-async function fetchSonioxTranscriptText(transcriptionId) {
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function fetchSonioxTranscriptText(transcriptionId, retries = 5, delayMs = 2000) {
   const apiKey = getAPIKey();
-  const rsp = await fetch(`${SONIOX_BASE}/transcriptions/${transcriptionId}/transcript`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  if (!rsp.ok) throw new Error(`Get transcript failed: ${await rsp.text()}`);
-  const j = await rsp.json();
-  return j.text || "";
+  let attempt = 0;
+
+  while (true) {
+    try {
+      const rsp = await fetch(`${SONIOX_BASE}/transcriptions/${transcriptionId}/transcript`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+
+      if (!rsp.ok) {
+        const body = await rsp.text().catch(() => "");
+       throw new Error(
+         `Get transcript failed: ${rsp.status} ${rsp.statusText}` +
+         (body ? ` — ${body}` : "")
+        );
+      }
+
+      const j = await rsp.json();
+      return j.text || "";
+    } catch (err) {
+      attempt += 1;
+      if (attempt > retries) {
+        logError(`Get transcript failed after ${retries} retries:`, err);
+        throw err;
+      }
+      logInfo(`Get transcript attempt ${attempt} failed; retrying in ${delayMs}ms…`);
+      await sleep(delayMs);
+    }
+  }
 }
 
 // ─────────────────── Deletion helpers (place right after fetchSonioxTranscriptText) ───────────────────
