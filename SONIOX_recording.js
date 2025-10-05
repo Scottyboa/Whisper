@@ -22,7 +22,7 @@ const DEBUG = true;
  // Buffer for accumulating VAD-detected speech segments
  let pendingVADChunks = [];
  // Minimum total speech duration before sending (in seconds)
- const MIN_CHUNK_DURATION_SECONDS = 30;
+ const MIN_CHUNK_DURATION_SECONDS = 90;
  // Configure callbacks for speech start/end
  const sileroVADOptions = {
   // Force a final speech-end event when pause/stop is called, even mid-speech
