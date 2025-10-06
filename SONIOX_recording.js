@@ -1,3 +1,4 @@
+
 // recording.js
 // Updated recording module without encryption/HMAC mechanisms,
 // processing audio chunks using OfflineAudioContext,
@@ -311,6 +312,14 @@ async function fetchSonioxTranscriptText(transcriptionId, retries = 5, delayMs =
   }
 }
 
+// + Estimate WAV duration (mono, 16-bit, 16 kHz)
+function estimateWavSeconds(wavBlob) {
+  const BYTES_PER_SEC = 16000 /* Hz */ * 2 /* bytes/sample */ * 1 /* channel */; // 32000
+  const payloadBytes = Math.max(0, wavBlob.size - 44); // strip 44-byte WAV header
+  return payloadBytes / BYTES_PER_SEC;
+}
+
+
 // ─────────────────── Deletion helpers (place right after fetchSonioxTranscriptText) ───────────────────
 async function deleteSonioxTranscription(transcriptionId) {
   if (!transcriptionId) return;
@@ -451,8 +460,10 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
     fileId = await uploadToSonioxFile(wavBlob, filename);
     // 2) create a transcription job on Soniox async model
     txId = await createSonioxTranscription(fileId, context);
-    // 3) poll until done
-    await pollSonioxTranscription(txId);
+    // 3) poll until done, timeout scales with audio length
+    const secs = estimateWavSeconds(wavBlob);
+    const timeoutMs = Math.max(300000, Math.ceil(secs * 4000)); // >=5 min, ~4× audio length
+    await pollSonioxTranscription(txId, timeoutMs, 1500);
     // 4) fetch final text
     const text = await fetchSonioxTranscriptText(txId);
     // 5) best-effort cleanup
