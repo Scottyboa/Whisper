@@ -234,7 +234,7 @@ async function createSonioxTranscription(fileId, context, retries = 5, backoff =
   const apiKey = getAPIKey();
   if (!apiKey) throw new Error("API key not available");
   const body = {
-    model: "stt-async-preview",
+    model: "stt-async-v3",
     file_id: fileId,
     // Norwegian first, then English, but Soniox auto-detects if omitted:
     language_hints: ["no", "en"],
