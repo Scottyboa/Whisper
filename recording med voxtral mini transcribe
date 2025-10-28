@@ -3,8 +3,8 @@
 // processing audio chunks using OfflineAudioContext,
 // and implementing a client‑side transcription queue that sends each processed chunk directly to OpenAI's Whisper API.
 let transcriptionError = false;
- // Proxy endpoint (Vercel)
- const PROXY_URL = "https://transcribe-notes-five.vercel.app/api/transcribe";
+// Mistral REST base
+const MISTRAL_BASE = "https://api.mistral.ai/v1";
 
 // --- Experiment toggle: use Voxtral Small via chat ---
 const USE_VOXTRAL_SMALL = true;
@@ -211,26 +211,31 @@ function getAPIKey() {
   return sessionStorage.getItem("user_api_key");
 }
 
-async function sendChunk(formData, retries = 5, backoff = 2000) {
-  // grab the API key at call-time
+// Direct call to Mistral audio transcriptions when not using chat+audio
+async function sendChunkToMistralTranscribe(wavBlob, chunkNum, { language = null } = {}) {
   const apiKey = getAPIKey();
   if (!apiKey) throw new Error("API key not available");
-   try {
- return await fetch(PROXY_URL, {
-   method: "POST",
-   headers: { "x-api-key": apiKey },
-   body: formData,
-});
-   } catch (err) {
-     if (retries > 0) {
-       console.warn(`Chunk failed, retrying in ${backoff}ms… (${retries} left)`);
-       await new Promise(res => setTimeout(res, backoff));
-       return sendChunk(formData, retries - 1, backoff * 1.5);
-     }
-     // out of retries → bubble error
-     throw err;
-   }
- }
+
+  const formData = new FormData();
+  formData.append("model", "voxtral-mini-latest");
+  formData.append("file", wavBlob, `chunk_${chunkNum}.wav`);
+  if (language) formData.append("language", language);
+
+  const resp = await fetch(`${MISTRAL_BASE}/audio/transcriptions`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${apiKey}` },
+    body: formData
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status} ${resp.statusText}${t ? ` — ${t}` : ""}`);
+  }
+
+  const json = await resp.json();
+  return json.text || "";
+}
+
 
 // --- File Blob Processing ---
 // Previously used for encryption; now simply returns the original blob along with markers.
@@ -332,69 +337,58 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
 async function transcribeChunkDirectly(wavBlob, chunkNum) {
   const apiKey = getAPIKey();
   if (!apiKey) throw new Error("API key not available for transcription");
-  
- try {
-   let response;
-   if (USE_VOXTRAL_SMALL) {
-     // --- Chat route with Voxtral Small ---
-     const audio_b64 = await blobToBase64(wavBlob);
-     const payload = {
-       // Small model (chat with audio)
-       model: "voxtral-small-latest",
-       temperature: 0.2,
-       messages: [{
-         role: "user",
-         content: [
-           { type: "input_audio", input_audio: audio_b64 },
-           // Keep this instruction ultra-constrained so it behaves like ASR
-           { type: "text", text:
-             "Transcribe the audio in the detected language. If the system detects Danish, transcribe instead using Norwegian Bokmål. Otherwise, use the detected language."
-           }
-         ]
-       }]
-     };
-     response = await fetch(PROXY_URL + "?mode=chat", {
-       method: "POST",
-       headers: { "x-api-key": apiKey, "content-type": "application/json" },
-       body: JSON.stringify(payload)
-     });
-   } else {
-     // --- Original fast transcription route (Mini Transcribe) ---
-     const formData = new FormData();
-     formData.append("file", wavBlob, `chunk_${chunkNum}.wav`);
-     formData.append("model", "voxtral-mini-latest");
-     // (Optional) try forcing language if you want:
-     // formData.append("language", "nb");
-     response = await sendChunk(formData);
-   }
-    if (!response.ok) { /* existing error parsing */ }
-    const json = await response.json();
+
+  try {
     if (USE_VOXTRAL_SMALL) {
-      // Chat responses return choices[0].message.content (array of parts or string)
+      // Mistral chat + audio
+      const audio_b64 = await blobToBase64(wavBlob);
+      const payload = {
+        model: "voxtral-small-latest", // or "voxtral-mini-latest"
+        temperature: 0.2,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "input_audio", input_audio: audio_b64 },
+            { type: "text", text:
+              "Transcribe the audio in the detected language. If Danish is detected, output Norwegian Bokmål; otherwise use the detected language."
+            }
+          ]
+        }]
+      };
+
+      const response = await fetch(`${MISTRAL_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status} ${response.statusText}${errText ? ` — ${errText}` : ""}`);
+      }
+
+      const json = await response.json();
       const parts = json?.choices?.[0]?.message?.content;
       if (Array.isArray(parts)) {
         const textPart = parts.find(p => p.type === "text");
-        return (textPart && textPart.text) ? textPart.text : "";
+        return textPart?.text ?? "";
       }
-      // Some SDKs return a string directly:
       return typeof parts === "string" ? parts : "";
     } else {
-      // Transcriptions endpoint
-      return json.text || "";
+      // Mistral STT endpoint
+      return await sendChunkToMistralTranscribe(wavBlob, chunkNum);
     }
   } catch (error) {
     logError(`Error transcribing chunk ${chunkNum}:`, error);
-    // Show tailored message if it really was a quota issue
-    updateStatusMessage(
-      error.message.includes("insufficient_quota")
-        ? "Error: You have exceeded your OpenAI quota or have no credits left."
-        : "Error transcribing: please try again",
-      "red"
-    );
+    updateStatusMessage("Transcription error", "red");
     transcriptionError = true;
     return `[Error transcribing chunk ${chunkNum}]`;
   }
 }
+
 
 // --- Transcription Queue Processing ---
 // Adds a processed chunk to the queue and processes chunks sequentially.
