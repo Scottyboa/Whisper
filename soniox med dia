@@ -24,7 +24,7 @@ const DEBUG = true;
   let pendingVADChunks = [];
   let pendingVADLock = false;  // mutex for pause/stop flushes
  // Minimum total speech duration before sending (in seconds)
- const MIN_CHUNK_DURATION_SECONDS = 90;
+ const MIN_CHUNK_DURATION_SECONDS = 1200;
  // Configure callbacks for speech start/end
  const sileroVADOptions = {
   // Force a final speech-end event when pause/stop is called, even mid-speech
@@ -103,6 +103,7 @@ let accumulatedRecordingTime = 0;
 let recordingTimerInterval;
 let completionTimerInterval = null;
 let completionStartTime = 0;
+let completionTimerRunning = false;
 let groupId = null;
 let chunkNumber = 1;
 let manualStop = false;
@@ -136,6 +137,40 @@ function updateStatusMessage(message, color = "#333") {
     statusElem.style.color = color;
   }
 }
+
+// ───── Completion timer helpers ───────────────────────────────────────────────
+function startCompletionTimer() {
+  if (completionTimerInterval) return; // already running
+  completionStartTime = Date.now();
+  completionTimerInterval = setInterval(() => {
+    const timerElem = document.getElementById("transcribeTimer");
+    if (timerElem) {
+      timerElem.innerText =
+        "Completion Timer: " + formatTime(Date.now() - completionStartTime);
+    }
+  }, 1000);
+  completionTimerRunning = true;
+}
+
+function freezeCompletionTimer() {
+  if (completionTimerInterval) {
+    clearInterval(completionTimerInterval);
+    completionTimerInterval = null;
+  }
+  completionTimerRunning = false;
+  // do NOT reset text — it should freeze on final time
+}
+
+function resetCompletionTimerDisplay() {
+  if (completionTimerInterval) {
+    clearInterval(completionTimerInterval);
+    completionTimerInterval = null;
+  }
+  completionTimerRunning = false;
+  const timerElem = document.getElementById("transcribeTimer");
+  if (timerElem) timerElem.innerText = "Completion Timer: 0 sec";
+}
+
 
 // ────────────────────────────────
 // ADD THIS HELPER JUST BELOW updateStatusMessage()
@@ -211,116 +246,6 @@ function getDeviceToken() {
   }
   return token;
 }
-// ────────────────────────────────
-// Voice Profile (persisted across sessions)
-// ────────────────────────────────
-const VOICE_PROFILE_KEY = "voice_profile_v1";
-const VOICE_ALIAS_KEY   = "voice_profile_alias_v1"; // e.g., "You" or "Doctor"
-const VOICE_SIM_THRESHOLD = 0.85; // cosine similarity threshold for a match
-const VOICE_EMA_ALPHA = 0.25;     // how fast the profile adapts (0..1)
-
-function loadVoiceProfile() {
-  try { return JSON.parse(localStorage.getItem(VOICE_PROFILE_KEY) || "null"); } catch { return null; }
-}
-function saveVoiceProfile(vec) {
-  localStorage.setItem(VOICE_PROFILE_KEY, JSON.stringify(vec));
-}
-function loadVoiceAlias() {
-  return localStorage.getItem(VOICE_ALIAS_KEY) || "You";
-}
-function saveVoiceAlias(alias) {
-  localStorage.setItem(VOICE_ALIAS_KEY, alias || "You");
-}
-function cosineSim(a, b) {
-  if (!a || !b || a.length !== b.length) return 0;
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na)*Math.sqrt(nb));
-}
-function emaUpdate(oldVec, newVec, alpha = VOICE_EMA_ALPHA) {
-  if (!oldVec) return newVec;
-  const out = new Array(oldVec.length);
-  for (let i = 0; i < oldVec.length; i++) out[i] = (1 - alpha)*oldVec[i] + alpha*newVec[i];
-  return out;
-}
-
-// ── Decode WAV blob and compute simple features on a time slice ──
-async function decodeWavToPCM(wavBlob) {
-  const arrayBuf = await wavBlob.arrayBuffer();
-  const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 48000, 48000);
-  // We can't directly decode with OfflineAudioContext; use AudioContext for decode then copy.
-  const tmp = new (window.AudioContext || window.webkitAudioContext)();
-  const buf = await tmp.decodeAudioData(arrayBuf.slice(0));
-  const ch0 = buf.getChannelData(0);
-  const sr  = buf.sampleRate;
-  tmp.close();
-  return { data: ch0, sampleRate: sr };
-}
-
-function sliceMsToSamples(sampleRate, startMs, endMs) {
-  const start = Math.max(0, Math.floor((startMs/1000) * sampleRate));
-  const end   = Math.max(start, Math.floor((endMs/1000) * sampleRate));
-  return [start, end];
-}
-
-function computeFeaturesFromPCM(pcm, sampleRate, startMs, endMs) {
-  const [s, e] = sliceMsToSamples(sampleRate, startMs, endMs);
-  const seg = pcm.subarray(s, Math.min(e, pcm.length));
-  if (seg.length === 0) return [0, 0, 0];
-  // RMS
-  let sumSq = 0, zc = 0, prev = seg[0];
-  for (let i = 0; i < seg.length; i++) {
-    const v = seg[i];
-    sumSq += v*v;
-    if ((v >= 0 && prev < 0) || (v < 0 && prev >= 0)) zc++;
-    prev = v;
-  }
-  const rms = Math.sqrt(sumSq / seg.length);
-  // Spectral centroid (simple FFT magnitude-weighted mean freq)
-  // Use power-of-two FFT size nearest to segment length (cap to 4096 for speed)
-  const N = 1 << Math.floor(Math.log2(Math.min(4096, seg.length)));
-  if (N < 512) return [rms, 0, zc / seg.length]; // too short for stable centroid
-  // Real-valued naïve DFT (small N) to avoid external deps:
-  const twoPiByN = 2 * Math.PI / N;
-  let magSum = 0, wSum = 0;
-  for (let k = 1; k < N/2; k++) {
-    let re = 0, im = 0;
-    for (let n = 0; n < N; n++) {
-      const ang = twoPiByN * k * n;
-      const v = seg[n] || 0;
-      re += v * Math.cos(ang);
-      im -= v * Math.sin(ang);
-    }
-    const mag = Math.sqrt(re*re + im*im);
-    const freq = (k * sampleRate) / N;
-    magSum += mag;
-    wSum += mag * freq;
-  }
-  const centroid = magSum > 0 ? (wSum / magSum) : 0;
-  const zcr = zc / seg.length;
-  // Return small vector: [rms, centroid(kHz), zcr]
-  return [rms, centroid / 1000, zcr];
-}
-
-async function computeSpeakerVectorFromTokens(wavBlob, tokens, speakerId) {
-  // Aggregate multiple segments (from this chunk) belonging to speakerId
-  const { data, sampleRate } = await decodeWavToPCM(wavBlob);
-  const segments = tokens
-    .filter(t => String(t.speaker) === String(speakerId))
-    .map(t => [Math.max(0, t.start_ms ?? 0), Math.max(t.end_ms ?? 0, (t.start_ms ?? 0)+50)]);
-  if (segments.length === 0) return null;
-  let acc = [0, 0, 0], cnt = 0;
-  for (const [sMs, eMs] of segments) {
-    const v = computeFeaturesFromPCM(data, sampleRate, sMs, eMs);
-    acc[0] += v[0]; acc[1] += v[1]; acc[2] += v[2]; cnt++;
-  }
-  return cnt ? acc.map(x => x / cnt) : null;
-}
-
-// Allow user to set preferred alias (optional UI hook)
-function setMyVoiceAlias(alias) { saveVoiceAlias(alias); }
-
 
 // --- API Key Retrieval ---
 // With encryption removed, we now simply get the API key from sessionStorage.
@@ -362,10 +287,11 @@ async function createSonioxTranscription(fileId, context, retries = 5, backoff =
     file_id: fileId,
     // Norwegian first, then English, but Soniox auto-detects if omitted:
     language_hints: ["no", "en"],
-    // Speaker diarization disabled to keep plain text similar to your current UI:
+    // ── Enable diarization so tokens include a "speaker" field ──
+    enable_speaker_diarization: true,
+    // keep language ID as before (useful in mixed NO/EN consults)
     enable_language_identification: true,
     context, // optional domain/context string
-    enable_speaker_diarization: true,
   };
   try {
     const rsp = await fetchWithTimeout(`${SONIOX_BASE}/transcriptions`, {
@@ -445,8 +371,13 @@ async function fetchSonioxTranscriptText(transcriptionId, retries = 5, delayMs =
       }
 
       const j = await rsp.json();
-      // IMPORTANT: return the full object so we can access tokens with `speaker`
-      return j; // { id, text, tokens: [...] }
+      // If diarization is enabled, Soniox returns tokens with a `speaker` field.
+      // Prefer a speaker-labeled rendering when available.
+      if (Array.isArray(j.tokens) && j.tokens.some(t => t && typeof t.speaker !== "undefined")) {
+        return renderDiarizedTranscript(j.tokens);
+      }
+      // Fallback: plain text
+      return j.text || "";
     } catch (err) {
       attempt += 1;
       if (attempt > retries) {
@@ -464,6 +395,36 @@ function estimateWavSeconds(wavBlob) {
   const BYTES_PER_SEC = 16000 /* Hz */ * 2 /* bytes/sample */ * 1 /* channel */; // 32000
   const payloadBytes = Math.max(0, wavBlob.size - 44); // strip 44-byte WAV header
   return payloadBytes / BYTES_PER_SEC;
+}
+
+
+// ─────────────────── Diarized transcript rendering ───────────────────
+// Groups consecutive tokens by speaker and creates readable "Speaker N: ..." lines.
+// Assumes tokens like: { text: " hello", speaker: "1", start_ms, end_ms, confidence }
+function renderDiarizedTranscript(tokens) {
+  const lines = [];
+  let curSpk = null;
+  let curText = "";
+
+  const flush = () => {
+    if (curSpk !== null && curText.trim()) {
+      lines.push(`Speaker ${String(curSpk)}: ${curText.trim()}`);
+    }
+    curText = "";
+  };
+
+  for (const tok of tokens) {
+    const spk = tok && typeof tok.speaker !== "undefined" ? tok.speaker : curSpk;
+    if (curSpk === null) curSpk = spk;
+    if (spk !== curSpk) {
+      flush();
+      curSpk = spk;
+    }
+    // Preserve Soniox token spacing as provided (tokens may include leading spaces)
+    curText += tok && typeof tok.text === "string" ? tok.text : "";
+  }
+  flush();
+  return lines.join("\n");
 }
 
 
@@ -611,93 +572,8 @@ gainNode.gain.linearRampToValueAtTime(0, duration);
     const secs = estimateWavSeconds(wavBlob);
     const timeoutMs = Math.max(300000, Math.ceil(secs * 4000)); // >=5 min, ~4× audio length
     await pollSonioxTranscription(txId, timeoutMs, 1500);
-    // 4) fetch final transcript (includes tokens when diarization is enabled)
-    const tr = await fetchSonioxTranscriptText(txId);
-    if (Array.isArray(tr?.tokens) && tr.tokens.length > 0) {
-      logDebug("Soniox token sample:", tr.tokens[0]); // expect `speaker` when diarization works
-    }
-
-    // Prefer diarized rendering when tokens have a `speaker` field; fallback to flat text.
-    let text = tr?.text || "";
-    const toks = Array.isArray(tr?.tokens) ? tr.tokens : [];
-    const hasSpeakers = toks.length > 0 && Object.prototype.hasOwnProperty.call(toks[0], "speaker");
-
-    if (hasSpeakers) {
-      // Map arbitrary Soniox speaker IDs to stable labels per chunk,
-      // with a cross-chunk override for your profile ("You").
-      const rawIds = [...new Set(toks.map(t => String(t.speaker)))];
-      const speakerMap = new Map();   // rawId -> label string
-      const orderMap   = new Map();   // rawId -> 1..N when not matched as "You"
-      const defaultLabelFor = (raw) => {
-        if (!orderMap.has(raw)) orderMap.set(raw, orderMap.size + 1);
-        return `Speaker ${orderMap.get(raw)}`;
-      };
-
-      // Try to identify "You" via per-session voice profile
-      let myProfile = loadVoiceProfile();
-      const myAlias = loadVoiceAlias(); // default "You"
-
-      if (myProfile && rawIds.length) {
-        try {
-          let bestId = null, bestSim = -1;
-          for (const rawId of rawIds) {
-            const vec = await computeSpeakerVectorFromTokens(wavBlob, toks, rawId);
-            if (!vec) continue;
-            const sim = cosineSim(myProfile, vec);
-            if (sim > bestSim) { bestSim = sim; bestId = rawId; }
-          }
-          if (bestId !== null && bestSim >= VOICE_SIM_THRESHOLD) {
-            speakerMap.set(bestId, myAlias);
-            const bestVec = await computeSpeakerVectorFromTokens(wavBlob, toks, bestId);
-            if (bestVec) saveVoiceProfile(emaUpdate(myProfile, bestVec));
-            logInfo(`Voice profile matched "${myAlias}" (sim=${bestSim.toFixed(2)}; spk=${bestId})`);
-          } else {
-            logInfo(`No voice-profile match this chunk (best sim=${bestSim.toFixed(2)})`);
-          }
-       } catch (e) {
-          logDebug("Voice profile match error:", e);
-        }
-      }
-
-      // Bootstrap profile if empty and there's exactly one speaker in the first chunk
-      if (!myProfile && rawIds.length === 1 && chunkNum === 1) {
-        try {
-          const seedId  = rawIds[0];
-          const seedVec = await computeSpeakerVectorFromTokens(wavBlob, toks, seedId);
-          if (seedVec) {
-            saveVoiceProfile(seedVec);
-            saveVoiceAlias(myAlias);
-            speakerMap.set(seedId, myAlias);
-            logInfo(`Bootstrapped voice profile from first speaker → alias "${myAlias}"`);
-          }
-        } catch (e) {
-          logDebug("Voice profile bootstrap error:", e);
-        }
-      }
-
-      const labelFor = (raw) => speakerMap.get(raw) || defaultLabelFor(raw);
-
-      // Group consecutive tokens by speaker and render labeled blocks
-      let out = [];
-      let curSpk = null;
-      let curBuf = [];
-      for (const tok of toks) {
-        const spk = String(tok.speaker ?? "");
-        if (curSpk === null) curSpk = spk;
-        if (spk !== curSpk) {
-          out.push(`${labelFor(curSpk)}: ${curBuf.join("")}`.trim());
-          curBuf = [];
-          curSpk = spk;
-        }
-        curBuf.push(tok.text ?? "");
-      }
-      if (curBuf.length) {
-        out.push(`${labelFor(curSpk)}: ${curBuf.join("")}`.trim());
-      }
-      text = out.join("\n");
-    } else {
-      logInfo("No `speaker` field on tokens; showing plain text. (Verify enable_speaker_diarization on Create)");
-    }
+    // 4) fetch final text
+    const text = await fetchSonioxTranscriptText(txId);
     // 5) best-effort cleanup
     await cleanupSonioxResources({ transcriptionId: txId, fileId });
     return text || "";
@@ -865,7 +741,8 @@ function updateTranscriptionOutput() {
     transcriptionElem.value = combinedTranscript.trim();
   }
   if (manualStop && transcriptionQueue.length === 0 && !isProcessingQueue) {
-    clearInterval(completionTimerInterval);
+    // freeze timer at final value
+    freezeCompletionTimer();
     if (!transcriptionError) {
       updateStatusMessage("Transcription finished!", "green");
       logInfo("Transcription complete.");
@@ -940,12 +817,7 @@ function resetRecordingState() {
   // ─── Clear our quota-error flag for this session ───
   transcriptionError = false;
   // ─── Clear any old completion timer (we’re starting fresh) ───
-  if (completionTimerInterval) {
-    clearInterval(completionTimerInterval);
-    completionTimerInterval = null;
-  }
-  const compTimerElem = document.getElementById("transcribeTimer");
-  if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
+  resetCompletionTimerDisplay();
   enqueuedChunks = 0;
   expectedChunks = 0;
   Object.values(pollingIntervals).forEach(interval => clearInterval(interval));
@@ -1224,17 +1096,13 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
   }
 }
 
-    // ─── Let any trailing enqueues settle, then start the completion timer ───
-    await Promise.resolve(); // microtask: ensure flush enqueues are visible
-    expectedChunks = enqueuedChunks; // kept for legacy logs; not used for completion gate
-    if (enqueuedChunks > 0 && !completionTimerInterval) {
-      completionStartTime = Date.now();
-      completionTimerInterval = setInterval(() => {
-        const timerElem = document.getElementById("transcribeTimer");
-        if (timerElem) {
-          timerElem.innerText = "Completion Timer: " + formatTime(Date.now() - completionStartTime);
-        }
-      }, 1000);
+    // ─── Let trailing enqueues settle, then decide if we should run completion timer ───
+    await Promise.resolve(); // ensure flush enqueues are visible
+    expectedChunks = enqueuedChunks;
+    const hasPendingWork =
+      transcriptionQueue.length > 0 || isProcessingQueue || pendingVADChunks.length > 0;
+    if (!recordingPaused && hasPendingWork && !completionTimerRunning) {
+      startCompletionTimer();
     }
     manualStop = true;
     clearTimeout(chunkTimeoutId);
@@ -1245,12 +1113,8 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
     // keep existing stopMicrophone, timers and flush logic intact
   // ── If there's nothing left to transcribe (e.g. paused + all chunks done) ──
   if (audioFrames.length === 0 && pendingVADChunks.length === 0) {
-    // stop the completion timer if it was running
-    clearInterval(completionTimerInterval);
-
-    // reset the displayed timer
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
+    // nothing left — keep completion timer at zero
+    resetCompletionTimerDisplay();
 
     updateTranscriptionOutput();
 
@@ -1269,10 +1133,8 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
   // NEW: If the recording is paused, finalize immediately.
   if (recordingPaused) {
     finalChunkProcessed = true;
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) {
-      compTimerElem.innerText = "Completion Timer: 0 sec";
-    }
+    // paused + Stop → per requirement: timer stays zero
+    resetCompletionTimerDisplay();
 
   
     const startButton = document.getElementById("startButton");
@@ -1288,9 +1150,8 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
   if (audioFrames.length === 0 && !processedAnyAudioFrames) {
     // No speech ever detected → treat as instant transcription complete
     resetRecordingState();
-    // Force completion timer back to zero
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
+    // Ensure completion timer shows zero via centralized helper
+    resetCompletionTimerDisplay();
     // Reset buttons
     const startButton = document.getElementById("startButton");
     if (startButton) startButton.disabled = false;
@@ -1307,10 +1168,7 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
       await safeProcessAudioChunk(true);
       if (!processedAnyAudioFrames) {
         resetRecordingState();
-        const compTimerElem = document.getElementById("transcribeTimer");
-        if (compTimerElem) {
-          compTimerElem.innerText = "Completion Timer: 0 sec";
-        }
+        resetCompletionTimerDisplay();
         const recTimerElem = document.getElementById("recordTimer");
         if (recTimerElem) {
           recTimerElem.innerText = "Recording Timer: 0 sec";
