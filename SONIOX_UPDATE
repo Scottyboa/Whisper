@@ -49,6 +49,7 @@ const DEBUG = true;
      // Start timer on first speech
     // Always show “Recording…” when speech starts, even on Resume
     updateStatusMessage("Recording…", "green");
+     resetCompletionTimerDisplay();
     // And still only start the timer once
     if (!recordingTimerInterval) {
       recordingStartTime     = Date.now();
@@ -107,6 +108,9 @@ let groupId = null;
 let chunkNumber = 1;
 let manualStop = false;
 let transcriptChunks = {};  // {chunkNumber: transcript}
+let transcriptFrozen = false; // freeze after final write to prevent wipes
+
+
 let pollingIntervals = {};  // (removed polling functions, kept for legacy structure)
 
 let chunkStartTime = 0;
@@ -134,6 +138,51 @@ function updateStatusMessage(message, color = "#333") {
   if (statusElem) {
     statusElem.innerText = message;
     statusElem.style.color = color;
+  }
+}
+
+// ───── Completion timer helpers (single-signal control) ──────────────────────
+function startCompletionTimer() {
+  if (completionTimerInterval) return; // already running
+  completionStartTime = Date.now();
+  completionTimerInterval = setInterval(() => {
+    const timerElem = document.getElementById("transcribeTimer");
+    if (timerElem) {
+      timerElem.innerText =
+        "Completion Timer: " + formatTime(Date.now() - completionStartTime);
+    }
+  }, 1000);
+}
+
+function freezeCompletionTimer() {
+  if (completionTimerInterval) {
+    clearInterval(completionTimerInterval);
+    completionTimerInterval = null;
+  }
+  // do NOT reset text — it should freeze on final value
+}
+
+function resetCompletionTimerDisplay() {
+  if (completionTimerInterval) {
+    clearInterval(completionTimerInterval);
+    completionTimerInterval = null;
+  }
+  const timerElem = document.getElementById("transcribeTimer");
+  if (timerElem) timerElem.innerText = "Completion Timer: 0 sec";
+}
+
+
+// ────────────────────────────────
+// ADD THIS HELPER JUST BELOW updateStatusMessage()
+// ────────────────────────────────
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(resource, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(id);
   }
 }
 
@@ -212,11 +261,11 @@ async function uploadToSonioxFile(wavBlob, filename, retries = 5, backoff = 2000
   const fd = new FormData();
   fd.append("file", wavBlob, filename);
   try {
-    const rsp = await fetch(`${SONIOX_BASE}/files`, {
+    const rsp = await fetchWithTimeout(`${SONIOX_BASE}/files`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
      body: fd,
-    });
+    }, 30000);
     if (!rsp.ok) throw new Error(`Soniox file upload failed: ${await rsp.text()}`);
     const j = await rsp.json();
     return j.id; // file_id
@@ -244,14 +293,14 @@ async function createSonioxTranscription(fileId, context, retries = 5, backoff =
     context, // optional domain/context string
   };
   try {
-    const rsp = await fetch(`${SONIOX_BASE}/transcriptions`, {
+    const rsp = await fetchWithTimeout(`${SONIOX_BASE}/transcriptions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, 30000);
     if (!rsp.ok) throw new Error(`Create transcription failed: ${await rsp.text()}`);
     const j = await rsp.json();
     return j.id; // transcription_id
@@ -269,9 +318,26 @@ async function pollSonioxTranscription(transcriptionId, timeoutMs = 300000, inte
   const apiKey = getAPIKey();
   const start = Date.now();
   while (true) {
-    const rsp = await fetch(`${SONIOX_BASE}/transcriptions/${transcriptionId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    // Use timeout wrapper so a single stalled poll request doesn't hang indefinitely.
+    let rsp;
+    try {
+      rsp = await fetchWithTimeout(
+        `${SONIOX_BASE}/transcriptions/${transcriptionId}`,
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+        30000 // 30 s per poll attempt
+      );
+    } catch (err) {
+      // If a single poll request times out/aborts, retry this same job ID
+      if (err && err.name === "AbortError") {
+        logDebug(`Poll ${transcriptionId} aborted after 30s; retrying…`);
+        // optional small delay to avoid hot-looping
+        await new Promise(r => setTimeout(r, intervalMs));
+        // check overall timeout before next iteration
+        if (Date.now() - start > timeoutMs) throw new Error("Transcription timed out");
+        continue;
+      }
+      throw err; // real error → surface it
+    }
     if (!rsp.ok) throw new Error(`Poll failed: ${await rsp.text()}`);
     const j = await rsp.json();
     if (j.status === "completed") return;
@@ -494,11 +560,11 @@ function enqueueTranscription(wavBlob, chunkNum) {
   transcriptionQueue.push({ chunkNum, wavBlob });
   enqueuedChunks += 1;
 
-  // Prevent simultaneous queue runs.
-  // If a queue is already processing, wait until it's done before re-starting.
-  if (!isProcessingQueue) {
+    // Always schedule a kick; the worker will no-op if already running.
+  // Using a microtask avoids races where isProcessingQueue flips after we check it.
+  queueMicrotask(() => {
     processTranscriptionQueue();
-  }
+  });
 }
 
 
@@ -523,7 +589,16 @@ async function processTranscriptionQueue() {
     wavBlob = null;
   }
   
+
+  // Queue fully drained: flip the flag, then trigger a final UI update
+  // so the completion condition (requires !isProcessingQueue) can fire.
   isProcessingQueue = false;
+
+  // Avoid a second final write after we've already frozen.
+  if (manualStop && transcriptionQueue.length === 0 && !transcriptFrozen) {
+    updateTranscriptionOutput();
+  }
+ 
 }
 
 // --- Removed: Polling functions (pollChunkTranscript) since we now transcribe directly ---
@@ -619,6 +694,8 @@ function finalizeStop() {
 }
 
 function updateTranscriptionOutput() {
+  // Prevent any post-finish writes from wiping the textarea
+  if (transcriptFrozen) return;
   const sortedKeys = Object.keys(transcriptChunks).map(Number).sort((a, b) => a - b);
   let combinedTranscript = "";
   sortedKeys.forEach(key => {
@@ -628,15 +705,15 @@ function updateTranscriptionOutput() {
   if (transcriptionElem) {
     transcriptionElem.value = combinedTranscript.trim();
   }
-  if (manualStop && Object.keys(transcriptChunks).length >= expectedChunks) {
-    clearInterval(completionTimerInterval);
+  if (manualStop && transcriptionQueue.length === 0 && !isProcessingQueue) {
+    freezeCompletionTimer();
     if (!transcriptionError) {
       updateStatusMessage("Transcription finished!", "green");
       logInfo("Transcription complete.");
     } else {
       logInfo("Transcription complete with errors; keeping error message visible.");
     }
-    transcriptChunks = {};
+    transcriptFrozen = true;
   }
 }
 
@@ -704,13 +781,7 @@ function resetRecordingState() {
   // ─── Clear our quota-error flag for this session ───
   transcriptionError = false;
   // ─── Clear any old completion timer (we’re starting fresh) ───
-  if (completionTimerInterval) {
-    clearInterval(completionTimerInterval);
-    completionTimerInterval = null;
-  }
-  const compTimerElem = document.getElementById("transcribeTimer");
-  if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
-  enqueuedChunks = 0;
+  resetCompletionTimerDisplay();enqueuedChunks = 0;
   expectedChunks = 0;
   Object.values(pollingIntervals).forEach(interval => clearInterval(interval));
   pollingIntervals = {};
@@ -721,6 +792,7 @@ function resetRecordingState() {
   }
 
   transcriptChunks = {};
+  transcriptFrozen = false;
   audioFrames = [];
   chunkStartTime = Date.now();
   lastFrameTime = Date.now();
@@ -778,6 +850,7 @@ function initRecording() {
             recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
             pauseResumeButton.innerText = "Pause Recording";
             updateStatusMessage("Recording…", "green");
+            resetCompletionTimerDisplay();
           }
 
           scheduleChunk();
@@ -912,7 +985,6 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
 });
 
 stopButton.addEventListener("click", async () => {
-    updateStatusMessage("Finishing transcription...", "blue");
     // --- FORCE-FLUSH the in-flight VAD segment via the public API ---
     // If MicVAD supports endSegment(), use it to emit the last audio
     if (sileroVAD && typeof sileroVAD.endSegment === "function") {
@@ -988,17 +1060,7 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
   }
 }
 
-   // ─── NOW compute how many chunks we’re actually waiting on ───
-    expectedChunks = enqueuedChunks;
-    if (expectedChunks > 0 && !completionTimerInterval) {
-      completionStartTime = Date.now();
-      completionTimerInterval = setInterval(() => {
-        const timerElem = document.getElementById("transcribeTimer");
-        if (timerElem) {
-          timerElem.innerText = "Completion Timer: " + formatTime(Date.now() - completionStartTime);
-        }
-      }, 1000);
-    }
+    await Promise.resolve(); // ensure any flush enqueues are visible
     manualStop = true;
     clearTimeout(chunkTimeoutId);
     if (recordingTimerInterval) {
@@ -1006,37 +1068,10 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
       recordingTimerInterval = null;
     }
     // keep existing stopMicrophone, timers and flush logic intact
-  // ── If there's nothing left to transcribe (e.g. paused + all chunks done) ──
-  if (audioFrames.length === 0 && pendingVADChunks.length === 0) {
-    // stop the completion timer if it was running
-    clearInterval(completionTimerInterval);
-
-    // reset the displayed timer
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
-
-    updateTranscriptionOutput();
-
-    // Re-enable/disable buttons for a fresh start
-    const startButton = document.getElementById("startButton");
-    if (startButton) startButton.disabled = false;
-    const stopButton = document.getElementById("stopButton");
-    if (stopButton) stopButton.disabled = true;
-    const pauseResumeButton = document.getElementById("pauseResumeButton");
-    if (pauseResumeButton) pauseResumeButton.disabled = true;
-
-    logInfo("Stop clicked with no pending audio frames; instant completion.");
-    return;
-  }
-
   // NEW: If the recording is paused, finalize immediately.
   if (recordingPaused) {
     finalChunkProcessed = true;
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) {
-      compTimerElem.innerText = "Completion Timer: 0 sec";
-    }
-
+    updateTranscriptionOutput();
   
     const startButton = document.getElementById("startButton");
     if (startButton) startButton.disabled = false;
@@ -1049,11 +1084,16 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
 
   // Continue with the existing logic if not paused:
   if (audioFrames.length === 0 && !processedAnyAudioFrames) {
-    // No speech ever detected → treat as instant transcription complete
-    resetRecordingState();
-    // Force completion timer back to zero
-    const compTimerElem = document.getElementById("transcribeTimer");
-    if (compTimerElem) compTimerElem.innerText = "Completion Timer: 0 sec";
+    // No speech ever detected: check if any real work exists
+    const hasWork =
+      transcriptionQueue.length > 0 || isProcessingQueue || pendingVADChunks.length > 0;
+    if (hasWork) {
+      updateStatusMessage("Finishing transcription...", "blue");
+      startCompletionTimer();
+    } else {
+      // Pure silence → finalize immediately; timer remains 0
+      updateTranscriptionOutput();
+    }
     // Reset buttons
     const startButton = document.getElementById("startButton");
     if (startButton) startButton.disabled = false;
@@ -1069,15 +1109,9 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
     } else {
       await safeProcessAudioChunk(true);
       if (!processedAnyAudioFrames) {
-        resetRecordingState();
-        const compTimerElem = document.getElementById("transcribeTimer");
-        if (compTimerElem) {
-          compTimerElem.innerText = "Completion Timer: 0 sec";
-        }
+        resetRecordingState(); // also resets completion timer display
         const recTimerElem = document.getElementById("recordTimer");
-        if (recTimerElem) {
-          recTimerElem.innerText = "Recording Timer: 0 sec";
-        }
+        if (recTimerElem) recTimerElem.innerText = "Recording Timer: 0 sec";
         updateStatusMessage("Recording reset. Ready to start.", "green");
         const startButton = document.getElementById("startButton");
         if (startButton) startButton.disabled = false;
@@ -1089,6 +1123,16 @@ if (pendingVADChunks.length > 0 && !pendingVADLock) {
         return;
       } else {
         finalChunkProcessed = true;
+        // There was speech/processing — decide based on remaining work.
+        const hasWork =
+          transcriptionQueue.length > 0 || isProcessingQueue || pendingVADChunks.length > 0;
+        if (hasWork) {
+          updateStatusMessage("Finishing transcription...", "blue");
+          startCompletionTimer();
+        } else {
+          // Nothing left; finalize now (timer freezes via updateTranscriptionOutput)
+          updateTranscriptionOutput();
+        }
         finalizeStop();
         logInfo("Stop button processed; final chunk handled.");
       }
