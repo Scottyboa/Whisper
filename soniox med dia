@@ -741,6 +741,7 @@ function updateTranscriptionOutput() {
     combinedTranscript += transcriptChunks[key] + " ";
   }
   const text = combinedTranscript.trim();
+  logDebug("UI write: combinedTranscript.length=", text.length);
 
   const transcriptionElem = document.getElementById("transcription");
   if (transcriptionElem) {
